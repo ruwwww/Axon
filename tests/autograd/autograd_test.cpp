@@ -447,6 +447,203 @@ TEST_CASE("ReshapeOp backward reshapes gradient to original shape", "[autograd]"
     REQUIRE(grads[a.id()].type().shape() == std::vector<int64_t>({2, 3}));
 }
 
+TEST_CASE("TransposeOp forward swaps shape and strides", "[operation]") {
+    Runtime rt;
+    auto x = Tensor::zeros(rt, {2, 3});
+    x.set_requires_grad(true);
+
+    auto result = rt.transpose(x, 0, 1);
+    REQUIRE(result);
+    REQUIRE(result.value().type().shape() == std::vector<int64_t>({3, 2}));
+    REQUIRE(result.value().type().strides() == std::vector<int64_t>({1, 3}));
+}
+
+TEST_CASE("TransposeOp forward shares storage", "[operation]") {
+    Runtime rt;
+    auto x = Tensor::zeros(rt, {2, 3});
+    x.set_requires_grad(true);
+
+    auto result = rt.transpose(x, 0, 1);
+    REQUIRE(result);
+    REQUIRE(result.value().storage().get() == x.storage().get());
+}
+
+TEST_CASE("TransposeOp forward validates dims", "[operation]") {
+    Runtime rt;
+    auto x = Tensor::zeros(rt, {2, 3});
+    auto result = rt.transpose(x, 0, 5);
+    REQUIRE_FALSE(result);
+
+    result = rt.transpose(x, -3, 1);
+    REQUIRE_FALSE(result);
+}
+
+TEST_CASE("TransposeOp forward records graph node when requires_grad", "[operation]") {
+    Runtime rt;
+    auto x = Tensor::zeros(rt, {2, 3});
+    x.set_requires_grad(true);
+
+    REQUIRE(rt.autograd().graph().size() == 0);
+    rt.transpose(x, 0, 1);
+    REQUIRE(rt.autograd().graph().size() == 1);
+}
+
+TEST_CASE("TransposeOp forward does not record graph when requires_grad is false", "[operation]") {
+    Runtime rt;
+    auto x = Tensor::zeros(rt, {2, 3});
+
+    REQUIRE(rt.autograd().graph().size() == 0);
+    rt.transpose(x, 0, 1);
+    REQUIRE(rt.autograd().graph().size() == 0);
+}
+
+TEST_CASE("TransposeOp backward produces gradient with original shape", "[autograd]") {
+    Runtime rt;
+    auto a = Tensor::empty(rt, {2, 3});
+    auto b = Tensor::empty(rt, {3, 4});
+    a.set_requires_grad(true);
+    b.set_requires_grad(true);
+
+    float a_data[] = {1,2,3,4,5,6};
+    float b_data[] = {7,8,9,10,11,12,13,14,15,16,17,18};
+    std::memcpy(a.data<float>(), a_data, 6 * sizeof(float));
+    std::memcpy(b.data<float>(), b_data, 12 * sizeof(float));
+
+    // y = a @ b  -> {2,4}
+    // z = y^T   -> {4,2}
+    // loss = sum(z)
+    Tensor y = *rt.matmul(a, b);
+    Tensor z = *rt.transpose(y, 0, 1);
+    rt.autograd().backward(rt, z);
+
+    auto& grads = rt.autograd().gradients();
+    REQUIRE(grads.count(a.id()) > 0);
+    REQUIRE(grads[a.id()].type().shape() == std::vector<int64_t>({2, 3}));
+    REQUIRE(grads.count(b.id()) > 0);
+    REQUIRE(grads[b.id()].type().shape() == std::vector<int64_t>({3, 4}));
+}
+
+TEST_CASE("TransposeOp backward values are correct (transpose of grad output)", "[autograd]") {
+    Runtime rt;
+    auto x = Tensor::empty(rt, {2, 3});
+    auto W = Tensor::empty(rt, {3, 2});
+    x.set_requires_grad(true);
+    W.set_requires_grad(true);
+
+    float x_data[] = {1,2,3,4,5,6};
+    float w_data[] = {7,8,9,10,11,12};
+    std::memcpy(x.data<float>(), x_data, 6 * sizeof(float));
+    std::memcpy(W.data<float>(), w_data, 6 * sizeof(float));
+
+    // y = x @ W  -> {2,2}
+    // z = y^T   -> {2,2}
+    // loss = sum(z) -> gradient of z is all ones
+    Tensor y = *rt.matmul(x, W);
+    Tensor z = *rt.transpose(y, 0, 1);
+    rt.autograd().backward(rt, z);
+
+    auto& grads = rt.autograd().gradients();
+
+    // dy = ones({2,2}), dx = dy @ W^T
+    // Since y = x @ W, dy = I (all ones from sum(z) where z = y^T)
+    // Wait: loss = sum(z) where z = y^T means loss = sum(y^T) = sum(y)
+    // So d(loss)/d(y) = ones({2,2})
+    // dx = ones @ W^T = W^T summed along rows
+    // For element (i,j): dx[i,j] = sum_k ones[i,k] * W[j,k] = sum_k W[j,k]
+    Tensor grad_x = grads[x.id()];
+    REQUIRE(grad_x.type().shape() == std::vector<int64_t>({2, 3}));
+    // grad_x[i,j] = W[j,0] + W[j,1] for each i (since dy is all ones)
+    // = W[j,0] + W[j,1]
+    for (int64_t j = 0; j < 3; ++j) {
+        float expected = w_data[j * 2 + 0] + w_data[j * 2 + 1];
+        REQUIRE(grad_x.data<float>()[j] == Catch::Approx(expected));
+    }
+}
+
+TEST_CASE("TransposeOp backward with non-contiguous grad_out uses correct strides", "[autograd]") {
+    Runtime rt;
+
+    // Input [2,3], forward transpose -> output [3,2] non-contiguous view
+    auto x = Tensor::zeros(rt, {2, 3});
+    x.set_requires_grad(true);
+    // Fill x with known values
+    float x_data[] = {1,2,3,4,5,6};
+    std::memcpy(x.data<float>(), x_data, 6 * sizeof(float));
+
+    // Forward: transpose(0,1) -> output y is a view of x with swapped strides
+    auto y = *rt.transpose(x, 0, 1);
+    REQUIRE(y.type().shape() == std::vector<int64_t>({3, 2}));
+    REQUIRE(y.type().strides() == std::vector<int64_t>({1, 3}));
+
+    // Manually construct a GraphNode for the transpose
+    GraphNode node;
+    node.op = OpType::Transpose;
+    node.inputs = {x};
+    node.output = y;
+    node.runtime = &rt;
+    auto meta_type = TensorType::contiguous({2}, DType::Int64);
+    Tensor meta(meta_type, rt.allocator().allocate(meta_type), false);
+    meta.data<int64_t>()[0] = 0;
+    meta.data<int64_t>()[1] = 1;
+    node.op_data = meta;
+
+    // Create a non-contiguous grad_out:
+    // Base contiguous tensor shape [3,2], strides [2,1], filled 10..15
+    auto base = Tensor::zeros(rt, {3, 2});
+    float base_data[] = {10, 11, 12, 13, 14, 15};
+    std::memcpy(base.data<float>(), base_data, 6 * sizeof(float));
+    // View with swapped strides [1,3] (non-contiguous)
+    TensorType view_type({3, 2}, {1, 3}, DType::Float32);
+    Tensor grad_out(view_type, base.storage(), false);
+
+    // Place in GradientMap keyed by y's id
+    GradientMap grads;
+    grads[y.id()] = grad_out;
+
+    // Call backward
+    auto result = TransposeOp::backward(rt, node, grads);
+    REQUIRE(result);
+
+    // Expected: grad has shape [2,3], contiguous, where grad[i][j] = grad_out[j][i]
+    // grad_out[j][i] with strides [1,3] is at flat index j*1 + i*3
+    // So grad[0][0] = grad_out[0][0] = base[0*1 + 0*3] = base[0] = 10
+    //    grad[0][1] = grad_out[1][0] = base[1*1 + 0*3] = base[1] = 11
+    //    grad[0][2] = grad_out[2][0] = base[2*1 + 0*3] = base[2] = 12
+    //    grad[1][0] = grad_out[0][1] = base[0*1 + 1*3] = base[3] = 13
+    //    grad[1][1] = grad_out[1][1] = base[1*1 + 1*3] = base[4] = 14
+    //    grad[1][2] = grad_out[2][1] = base[2*1 + 1*3] = base[5] = 15
+
+    REQUIRE(grads.count(x.id()) > 0);
+    Tensor grad = grads[x.id()];
+    REQUIRE(grad.type().shape() == std::vector<int64_t>({2, 3}));
+
+    float expected_grad[] = {10, 11, 12, 13, 14, 15};
+    auto* g_ptr = grad.data<float>();
+    for (int i = 0; i < 6; ++i) {
+        REQUIRE(g_ptr[i] == Catch::Approx(expected_grad[i]));
+    }
+}
+
+TEST_CASE("TransposeOp forward with negative dims", "[operation]") {
+    Runtime rt;
+    auto x = Tensor::zeros(rt, {2, 3});
+    x.set_requires_grad(true);
+
+    auto result = rt.transpose(x, -1, 0);
+    REQUIRE(result);
+    REQUIRE(result.value().type().shape() == std::vector<int64_t>({3, 2}));
+}
+
+TEST_CASE("TransposeOp forward with dim1 == dim2 is no-op", "[operation]") {
+    Runtime rt;
+    auto x = Tensor::zeros(rt, {2, 3});
+
+    auto result = rt.transpose(x, 1, 1);
+    REQUIRE(result);
+    REQUIRE(result.value().type().shape() == std::vector<int64_t>({2, 3}));
+    REQUIRE(result.value().type().strides() == std::vector<int64_t>({3, 1}));
+}
+
 TEST_CASE("MeanOp forward reduces over single dim", "[operation]") {
     Runtime rt;
     auto x = Tensor::empty(rt, {2, 3});

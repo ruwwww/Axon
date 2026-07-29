@@ -23,6 +23,7 @@ enum class OpType : uint8_t {
     LayerNorm,
     GELU,
     Reshape,
+    Transpose,
     Mean,
     L1Loss,
 };
@@ -101,6 +102,11 @@ struct GELUOp {
 
 struct ReshapeOp {
     static Expected<Tensor> forward(Runtime& rt, const Tensor& x, const std::vector<int64_t>& new_shape);
+    static Expected<void> backward(Runtime& rt, const GraphNode& node, GradientMap& grads);
+};
+
+struct TransposeOp {
+    static Expected<Tensor> forward(Runtime& rt, const Tensor& x, int64_t dim1, int64_t dim2);
     static Expected<void> backward(Runtime& rt, const GraphNode& node, GradientMap& grads);
 };
 

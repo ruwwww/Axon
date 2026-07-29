@@ -36,6 +36,10 @@ Expected<Tensor> Runtime::reshape(const Tensor& x, const std::vector<int64_t>& n
     return ReshapeOp::forward(*this, x, new_shape);
 }
 
+Expected<Tensor> Runtime::transpose(const Tensor& x, int64_t dim1, int64_t dim2) {
+    return TransposeOp::forward(*this, x, dim1, dim2);
+}
+
 Expected<Tensor> Runtime::mean(const Tensor& x, const std::vector<int64_t>& dims, bool keepdim) {
     return MeanOp::forward(*this, x, dims, keepdim);
 }

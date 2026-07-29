@@ -1392,6 +1392,97 @@ Expected<void> MeanOp::backward(Runtime& rt, const GraphNode& node, GradientMap&
     return {};
 }
 
+// ── TransposeOp ───────────────────────────────────────────────────────
+
+Expected<Tensor> TransposeOp::forward(Runtime& rt, const Tensor& x, int64_t dim1, int64_t dim2) {
+    auto ndim = static_cast<int64_t>(x.type().shape().size());
+    if (dim1 < 0) dim1 += ndim;
+    if (dim2 < 0) dim2 += ndim;
+    if (dim1 < 0 || dim1 >= ndim || dim2 < 0 || dim2 >= ndim) {
+        return Error{"TransposeOp: dim out of range"};
+    }
+
+    auto swapped_shape = x.type().shape();
+    auto swapped_strides = x.type().strides();
+    std::swap(swapped_shape[dim1], swapped_shape[dim2]);
+    std::swap(swapped_strides[dim1], swapped_strides[dim2]);
+
+    TensorType out_type(swapped_shape, swapped_strides, x.type().dtype());
+    bool need_grad = x.requires_grad();
+    auto out = Tensor(out_type, x.storage(), need_grad);
+
+    if (need_grad) {
+        GraphNode node;
+        node.op = OpType::Transpose;
+        node.inputs = {x};
+        node.output = out;
+        node.runtime = &rt;
+        // Store dim1, dim2 in op_data
+        auto meta_type = TensorType::contiguous({2}, DType::Int64);
+        Tensor meta(meta_type, rt.allocator().allocate(meta_type), false);
+        meta.data<int64_t>()[0] = dim1;
+        meta.data<int64_t>()[1] = dim2;
+        node.op_data = meta;
+        rt.autograd().graph().append(std::move(node));
+    }
+
+    return out;
+}
+
+Expected<void> TransposeOp::backward(Runtime& rt, const GraphNode& node, GradientMap& grads) {
+    auto grad_it = grads.find(node.output.id());
+    if (grad_it == grads.end()) {
+        return {};
+    }
+    Tensor grad_out = grad_it->second;
+
+    int64_t dim1 = node.op_data.data<const int64_t>()[0];
+    int64_t dim2 = node.op_data.data<const int64_t>()[1];
+
+    const Tensor& input = node.inputs[0];
+    const auto& in_shape = input.type().shape();
+    auto ndim = static_cast<int64_t>(in_shape.size());
+
+    // Gradient is a transpose of grad_out by the same dims
+    auto grad_shape = grad_out.type().shape();
+    auto grad_strides = grad_out.type().strides();
+    std::swap(grad_shape[dim1], grad_shape[dim2]);
+    std::swap(grad_strides[dim1], grad_strides[dim2]);
+
+    // Materialize as contiguous for accumulation (cpu::add expects contiguous)
+    auto dx_type = TensorType::contiguous(grad_shape, grad_out.type().dtype());
+    Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
+    auto* dx_ptr = dx.data<float>();
+    auto* go_ptr = grad_out.data<const float>();
+    auto numel = dx.type().numel();
+
+    // Element-wise transpose copy: for each element in contiguous output,
+    // map to corresponding element in grad_out
+    std::vector<int64_t> idx(ndim);
+    for (int64_t flat = 0; flat < numel; ++flat) {
+        int64_t tmp = flat;
+        for (int64_t d = ndim - 1; d >= 0; --d) {
+            idx[d] = tmp % in_shape[d];
+            tmp /= in_shape[d];
+        }
+        std::swap(idx[dim1], idx[dim2]);
+        int64_t out_flat = 0;
+        for (int64_t d = 0; d < ndim; ++d) {
+            out_flat += idx[d] * grad_out.type().strides()[d];
+        }
+        dx_ptr[flat] = go_ptr[out_flat];
+    }
+
+    auto it = grads.find(input.id());
+    if (it != grads.end()) {
+        cpu::add(it->second, it->second, dx);
+    } else {
+        grads[input.id()] = dx;
+    }
+
+    return {};
+}
+
 // ── Autograd ──────────────────────────────────────────────────────────
 
 Expected<void> Autograd::backward(Runtime& runtime, const Tensor& loss) {
@@ -1455,6 +1546,10 @@ Expected<void> Autograd::backward(Runtime& runtime, const Tensor& loss) {
             }
             case OpType::Reshape: {
                 RETURN_IF_ERROR(ReshapeOp::backward(*node.runtime, node, grads_));
+                break;
+            }
+            case OpType::Transpose: {
+                RETURN_IF_ERROR(TransposeOp::backward(*node.runtime, node, grads_));
                 break;
             }
             case OpType::Mean: {
