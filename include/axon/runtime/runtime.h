@@ -22,6 +22,7 @@ public:
 
     Expected<Tensor> matmul(const Tensor& a, const Tensor& b);
     Expected<Tensor> relu(const Tensor& x);
+    Expected<Tensor> add(const Tensor& a, const Tensor& b);
 
 private:
     Allocator allocator_;

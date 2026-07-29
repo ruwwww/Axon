@@ -1,4 +1,5 @@
 #include "axon/backend/cpu_backend.h"
+#include <cmath>
 #include <string>
 
 namespace axon::cpu {
@@ -99,6 +100,76 @@ Expected<void> relu(Tensor& out, const Tensor& x) {
 
     for (int64_t i = 0; i < n; ++i) {
         out_ptr[i] = x_ptr[i] > 0.0f ? x_ptr[i] : 0.0f;
+    }
+
+    return {};
+}
+
+Expected<void> log_softmax(Tensor& out, const Tensor& x) {
+    if (x.type().shape() != out.type().shape()) {
+        return Error{"cpu::log_softmax: shape mismatch"};
+    }
+    if (x.type().dtype() != DType::Float32 || out.type().dtype() != DType::Float32) {
+        return Error{"cpu::log_softmax: only Float32 supported"};
+    }
+
+    const auto& shape = x.type().shape();
+    int64_t n_rows = shape.size() == 2 ? shape[0] : 1;
+    int64_t n_cols = shape.size() == 2 ? shape[1] : shape[0];
+
+    auto* x_ptr = x.data<const float>();
+    auto* out_ptr = out.data<float>();
+
+    for (int64_t i = 0; i < n_rows; ++i) {
+        float max_val = x_ptr[i * n_cols];
+        for (int64_t j = 1; j < n_cols; ++j) {
+            if (x_ptr[i * n_cols + j] > max_val) max_val = x_ptr[i * n_cols + j];
+        }
+
+        float sum = 0.0f;
+        for (int64_t j = 0; j < n_cols; ++j) {
+            sum += std::exp(x_ptr[i * n_cols + j] - max_val);
+        }
+        float log_sum = std::log(sum);
+
+        for (int64_t j = 0; j < n_cols; ++j) {
+            out_ptr[i * n_cols + j] = x_ptr[i * n_cols + j] - max_val - log_sum;
+        }
+    }
+
+    return {};
+}
+
+Expected<void> softmax(Tensor& out, const Tensor& x) {
+    if (x.type().shape() != out.type().shape()) {
+        return Error{"cpu::softmax: shape mismatch"};
+    }
+    if (x.type().dtype() != DType::Float32 || out.type().dtype() != DType::Float32) {
+        return Error{"cpu::softmax: only Float32 supported"};
+    }
+
+    const auto& shape = x.type().shape();
+    int64_t n_rows = shape.size() == 2 ? shape[0] : 1;
+    int64_t n_cols = shape.size() == 2 ? shape[1] : shape[0];
+
+    auto* x_ptr = x.data<const float>();
+    auto* out_ptr = out.data<float>();
+
+    for (int64_t i = 0; i < n_rows; ++i) {
+        float max_val = x_ptr[i * n_cols];
+        for (int64_t j = 1; j < n_cols; ++j) {
+            if (x_ptr[i * n_cols + j] > max_val) max_val = x_ptr[i * n_cols + j];
+        }
+
+        float sum = 0.0f;
+        for (int64_t j = 0; j < n_cols; ++j) {
+            out_ptr[i * n_cols + j] = std::exp(x_ptr[i * n_cols + j] - max_val);
+            sum += out_ptr[i * n_cols + j];
+        }
+
+        for (int64_t j = 0; j < n_cols; ++j) {
+            out_ptr[i * n_cols + j] /= sum;
+        }
     }
 
     return {};

@@ -29,3 +29,7 @@ file(GLOB_RECURSE TEST_SOURCES tests/*.cpp)
 
 add_executable(axon_tests ${TEST_SOURCES})
 target_link_libraries(axon_tests PRIVATE axon Catch2::Catch2WithMain)
+
+# MNIST example
+add_executable(mnist_example examples/mnist.cpp)
+target_link_libraries(mnist_example PRIVATE axon)

@@ -13,6 +13,9 @@ class Runtime;
 enum class OpType : uint8_t {
     MatMul,
     ReLU,
+    Add,
+    CrossEntropyLoss,
+    MSE,
 };
 
 struct GraphNode {
@@ -26,6 +29,7 @@ struct GraphNode {
 class Graph {
 public:
     void append(GraphNode node);
+    void clear() { nodes_.clear(); }
     size_t size() const;
     const GraphNode& operator[](size_t i) const;
     GraphNode& operator[](size_t i);
@@ -43,6 +47,11 @@ struct MatMulOp {
 
 struct ReLUOp {
     static Expected<Tensor> forward(Runtime& rt, const Tensor& x);
+    static Expected<void> backward(Runtime& rt, const GraphNode& node, GradientMap& grads);
+};
+
+struct AddOp {
+    static Expected<Tensor> forward(Runtime& rt, const Tensor& a, const Tensor& b);
     static Expected<void> backward(Runtime& rt, const GraphNode& node, GradientMap& grads);
 };
 
