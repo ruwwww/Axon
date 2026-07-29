@@ -17,6 +17,7 @@ public:
     void register_parameter(const std::string& name, Parameter* param);
     virtual std::vector<Parameter*> parameters() { return parameters_; }
     virtual const std::vector<Parameter*>& parameters() const { return parameters_; }
+    const std::vector<std::string>& parameter_names() const { return param_names_; }
 
     virtual Expected<Tensor> forward(Runtime& rt, const Tensor& x) = 0;
 
@@ -26,6 +27,7 @@ public:
 
 private:
     std::vector<Parameter*> parameters_;
+    std::vector<std::string> param_names_;
     bool training_ = true;
 };
 
