@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-Building a deep learning framework from scratch to understand how modern AI runtimes work. Current state: a high-level architecture spec exists, but no code. The goal is an executable framework that can train ResNet-18 on ImageNet with CPU execution, eager autograd, and GGML-style quantized storage.
+Building a deep learning framework from scratch to understand how modern AI runtimes work. Current state: a high-level architecture spec exists, but no code. The goal is an executable framework that can train neural networks on CIFAR-10 and MNIST with CPU execution, eager autograd, and GGML-style quantized storage.
 
 ## Solution
 
@@ -126,4 +126,4 @@ A minimal, layered C++20 framework with six subsystems: Storage, Tensor, Backend
 - No global state, no singletons, no macros.
 - RAII everywhere. Raw pointers are non-owning only.
 - Memory ownership: Tensor (`shared_ptr<Storage>`), Graph (owns nodes), Module (owns parameters), Optimizer (owns state tensors).
-- Milestones: M1 (Tensor, Storage, MatMul, ReLU, Autograd) → M2 (Linear, SGD, MNIST) → M3 (Conv2D, AdamW, CIFAR10) → M4 (ResNet18, ImageNet) → M5 (GGML quantized inference/training research).
+- Milestones: M1 (Tensor, Storage, MatMul, ReLU, Autograd) → M2 (Linear, SGD, MNIST) → M3 (Conv2D, AdamW, CIFAR10) → M4 (ResNet18, CIFAR10) → M5 (GGML quantized inference/training research).
