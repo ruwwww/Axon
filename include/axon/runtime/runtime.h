@@ -22,6 +22,7 @@ public:
 
     Expected<Tensor> matmul(const Tensor& a, const Tensor& b);
     Expected<Tensor> relu(const Tensor& x);
+    Expected<Tensor> gelu(const Tensor& x);
     Expected<Tensor> add(const Tensor& a, const Tensor& b);
     Expected<Tensor> conv2d(const Tensor& input, const Tensor& weight, const Tensor& bias,
                             int64_t stride = 1, int64_t padding = 0);

@@ -1099,6 +1099,66 @@ Expected<void> LayerNormOp::backward(Runtime& rt, const GraphNode& node, Gradien
     return {};
 }
 
+// ── GELUOp ────────────────────────────────────────────────────────────
+
+Expected<Tensor> GELUOp::forward(Runtime& rt, const Tensor& x) {
+    auto out_type = TensorType::contiguous(x.type().shape(), x.type().dtype());
+    auto out = Tensor(out_type, rt.allocator().allocate(out_type), x.requires_grad());
+
+    RETURN_IF_ERROR(cpu::gelu(out, x));
+
+    if (x.requires_grad()) {
+        GraphNode node;
+        node.op = OpType::GELU;
+        node.inputs = {x};
+        node.output = out;
+        node.runtime = &rt;
+        rt.autograd().graph().append(std::move(node));
+    }
+
+    return out;
+}
+
+Expected<void> GELUOp::backward(Runtime& rt, const GraphNode& node, GradientMap& grads) {
+    const Tensor& x = node.inputs[0];
+    auto grad_it = grads.find(node.output.id());
+    if (grad_it == grads.end()) {
+        return {};
+    }
+    Tensor grad_out = grad_it->second;
+
+    auto dx_type = TensorType::contiguous(x.type().shape(), x.type().dtype());
+    Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
+
+    auto* dx_ptr = dx.data<float>();
+    auto* go_ptr = grad_out.data<const float>();
+    auto* x_ptr = x.data<const float>();
+    auto n = x.type().numel();
+    constexpr float alpha = 0.79788456f;
+    constexpr float beta = 0.044715f;
+
+    for (int64_t i = 0; i < n; ++i) {
+        float xi = x_ptr[i];
+        float x3 = xi * xi * xi;
+        float g = alpha * (xi + beta * x3);
+        float t = std::tanh(g);
+        float t2 = 1.0f - t * t;
+        float gprime = alpha * (1.0f + 3.0f * beta * xi * xi);
+        float df = 0.5f * (1.0f + t + xi * t2 * gprime);
+        dx_ptr[i] = go_ptr[i] * df;
+    }
+
+    const Tensor& input = node.inputs[0];
+    auto it = grads.find(input.id());
+    if (it != grads.end()) {
+        cpu::add(it->second, it->second, dx);
+    } else {
+        grads[input.id()] = dx;
+    }
+
+    return {};
+}
+
 // ── Autograd ──────────────────────────────────────────────────────────
 
 Expected<void> Autograd::backward(Runtime& runtime, const Tensor& loss) {
@@ -1154,6 +1214,10 @@ Expected<void> Autograd::backward(Runtime& runtime, const Tensor& loss) {
             }
             case OpType::LayerNorm: {
                 RETURN_IF_ERROR(LayerNormOp::backward(*node.runtime, node, grads_));
+                break;
+            }
+            case OpType::GELU: {
+                RETURN_IF_ERROR(GELUOp::backward(*node.runtime, node, grads_));
                 break;
             }
         }

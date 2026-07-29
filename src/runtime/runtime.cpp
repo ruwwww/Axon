@@ -27,6 +27,10 @@ Expected<Tensor> Runtime::relu(const Tensor& x) {
     return ReLUOp::forward(*this, x);
 }
 
+Expected<Tensor> Runtime::gelu(const Tensor& x) {
+    return GELUOp::forward(*this, x);
+}
+
 Expected<Tensor> Runtime::add(const Tensor& a, const Tensor& b) {
     return AddOp::forward(*this, a, b);
 }

@@ -21,6 +21,7 @@ enum class OpType : uint8_t {
     AvgPool2d,
     BatchNorm,
     LayerNorm,
+    GELU,
 };
 
 struct GraphNode {
@@ -87,6 +88,11 @@ struct BatchNormOp {
 struct LayerNormOp {
     static Expected<Tensor> forward(Runtime& rt, const Tensor& input,
                                     const Tensor& gamma, const Tensor& beta, float epsilon);
+    static Expected<void> backward(Runtime& rt, const GraphNode& node, GradientMap& grads);
+};
+
+struct GELUOp {
+    static Expected<Tensor> forward(Runtime& rt, const Tensor& x);
     static Expected<void> backward(Runtime& rt, const GraphNode& node, GradientMap& grads);
 };
 

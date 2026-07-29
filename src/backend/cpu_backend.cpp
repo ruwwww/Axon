@@ -108,6 +108,31 @@ Expected<void> relu(Tensor& out, const Tensor& x) {
     return {};
 }
 
+Expected<void> gelu(Tensor& out, const Tensor& x) {
+    if (x.type().shape() != out.type().shape()) {
+        return Error{"cpu::gelu: shape mismatch"};
+    }
+    if (x.type().dtype() != DType::Float32 || out.type().dtype() != DType::Float32) {
+        return Error{"cpu::gelu: only Float32 supported"};
+    }
+
+    auto* x_ptr = x.data<const float>();
+    auto* out_ptr = out.data<float>();
+    auto n = x.type().numel();
+    constexpr float alpha = 0.79788456f;  // sqrt(2/pi)
+    constexpr float beta = 0.044715f;
+
+    for (int64_t i = 0; i < n; ++i) {
+        float xi = x_ptr[i];
+        float x3 = xi * xi * xi;
+        float inner = alpha * (xi + beta * x3);
+        float tanh_inner = std::tanh(inner);
+        out_ptr[i] = 0.5f * xi * (1.0f + tanh_inner);
+    }
+
+    return {};
+}
+
 Expected<void> log_softmax(Tensor& out, const Tensor& x) {
     if (x.type().shape() != out.type().shape()) {
         return Error{"cpu::log_softmax: shape mismatch"};

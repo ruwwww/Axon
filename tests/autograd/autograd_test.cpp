@@ -144,6 +144,89 @@ TEST_CASE("ReLUOp forward does not record graph when requires_grad is false", "[
     REQUIRE(rt.autograd().graph().size() == 0);
 }
 
+// ── GELUOp tests ─────────────────────────────────────────────────────
+
+TEST_CASE("GELUOp forward allocates correct output shape", "[operation]") {
+    Runtime rt;
+    auto x = Tensor::zeros(rt, {2, 3});
+    x.set_requires_grad(true);
+
+    auto result = rt.gelu(x);
+    REQUIRE(result);
+    REQUIRE(result.value().type().shape() == std::vector<int64_t>({2, 3}));
+}
+
+TEST_CASE("GELUOp forward records graph node when requires_grad", "[operation]") {
+    Runtime rt;
+    auto x = Tensor::zeros(rt, {2, 3});
+    x.set_requires_grad(true);
+
+    REQUIRE(rt.autograd().graph().size() == 0);
+    rt.gelu(x);
+    REQUIRE(rt.autograd().graph().size() == 1);
+}
+
+TEST_CASE("GELUOp forward does not record graph when requires_grad is false", "[operation]") {
+    Runtime rt;
+    auto x = Tensor::zeros(rt, {2, 3});
+
+    REQUIRE(rt.autograd().graph().size() == 0);
+    rt.gelu(x);
+    REQUIRE(rt.autograd().graph().size() == 0);
+}
+
+TEST_CASE("GELUOp backward matches finite differences", "[autograd]") {
+    Runtime rt;
+    auto x = Tensor::empty(rt, {4});
+    x.set_requires_grad(true);
+
+    float x_data[] = {-1.5f, -0.5f, 0.5f, 1.5f};
+    std::memcpy(x.data<float>(), x_data, 4 * sizeof(float));
+
+    Tensor y = *rt.gelu(x);
+
+    auto result = rt.autograd().backward(rt, y);
+    REQUIRE(result);
+
+    auto& grads = rt.autograd().gradients();
+    Tensor grad_x = grads[x.id()];
+
+    REQUIRE(grad_x.type().shape() == std::vector<int64_t>({4}));
+
+    const double eps = 1.0 / 1024.0;
+    for (int64_t i = 0; i < 4; ++i) {
+        double orig = x_data[i];
+
+        double y_plus = 0.0;
+        {
+            float xi = static_cast<float>(orig + eps);
+            float x3 = xi * xi * xi;
+            float inner = 0.79788456f * (xi + 0.044715f * x3);
+            y_plus = 0.5 * xi * (1.0 + std::tanh(inner));
+        }
+        {
+            float xi = static_cast<float>(orig + eps);
+            float x3 = xi * xi * xi;
+            float inner = 0.79788456f * (xi + 0.044715f * x3);
+            y_plus = 0.5 * xi * (1.0 + std::tanh(inner));
+        }
+
+        x.data<float>()[i] = static_cast<float>(orig - eps);
+        double y_minus = 0.0;
+        {
+            float xi = static_cast<float>(orig - eps);
+            float x3 = xi * xi * xi;
+            float inner = 0.79788456f * (xi + 0.044715f * x3);
+            y_minus = 0.5 * xi * (1.0 + std::tanh(inner));
+        }
+
+        x.data<float>()[i] = static_cast<float>(orig);
+
+        double numerical = (y_plus - y_minus) / (2.0 * eps);
+        REQUIRE(static_cast<double>(grad_x.data<float>()[i]) == Catch::Approx(numerical).epsilon(1e-3));
+    }
+}
+
 // ── Autograd integration tests ────────────────────────────────────────
 
 TEST_CASE("Autograd backward produces gradients for all inputs", "[autograd]") {

@@ -84,6 +84,26 @@ TEST_CASE("cpu::add rejects mismatched shapes", "[backend][cpu]") {
     REQUIRE_FALSE(result);
 }
 
+// ── GELU ────────────────────────────────────────────────────────────────
+
+TEST_CASE("cpu::gelu produces correct output for known input", "[backend][cpu]") {
+    Runtime rt;
+    auto x = Tensor::empty(rt, {4});
+    auto out = Tensor::empty(rt, {4});
+
+    float x_data[] = {-2.0f, -1.0f, 0.0f, 1.0f};
+    std::memcpy(x.data<float>(), x_data, 4 * sizeof(float));
+
+    auto result = cpu::gelu(out, x);
+    REQUIRE(result);
+
+    // Expected values from GELU approximation: gelu(x) = 0.5*x*(1+tanh(sqrt(2/pi)*(x+0.044715*x^3)))
+    REQUIRE(out.data<float>()[0] == Catch::Approx(-0.0454f).epsilon(1e-2));
+    REQUIRE(out.data<float>()[1] == Catch::Approx(-0.1588f).epsilon(1e-2));
+    REQUIRE(out.data<float>()[2] == Catch::Approx(0.0f));
+    REQUIRE(out.data<float>()[3] == Catch::Approx(0.8412f).epsilon(1e-2));
+}
+
 // ── Conv2d ─────────────────────────────────────────────────────────────
 
 TEST_CASE("cpu::conv2d basic 1x1 kernel produces correct output", "[backend][cpu]") {

@@ -15,6 +15,7 @@ Expected<void> div(Tensor& out, const Tensor& a, const Tensor& b);
 
 Expected<void> matmul(Tensor& out, const Tensor& a, const Tensor& b);
 Expected<void> relu(Tensor& out, const Tensor& x);
+Expected<void> gelu(Tensor& out, const Tensor& x);
 
 Expected<void> log_softmax(Tensor& out, const Tensor& x);
 Expected<void> softmax(Tensor& out, const Tensor& x);
