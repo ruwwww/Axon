@@ -33,3 +33,7 @@ target_link_libraries(axon_tests PRIVATE axon Catch2::Catch2WithMain)
 # MNIST example
 add_executable(mnist_example examples/mnist.cpp)
 target_link_libraries(mnist_example PRIVATE axon)
+
+# CIFAR10 example
+add_executable(cifar10_example examples/cifar10.cpp)
+target_link_libraries(cifar10_example PRIVATE axon)

@@ -4,6 +4,7 @@
 #include "axon/nn/mse.h"
 #include "axon/runtime/runtime.h"
 #include <cmath>
+#include <limits>
 
 namespace axon {
 
@@ -427,6 +428,595 @@ Expected<void> MSELossOp::backward(Runtime& rt, const GraphNode& node, GradientM
     return {};
 }
 
+// ── Conv2DOp ───────────────────────────────────────────────────────────
+
+Expected<Tensor> Conv2DOp::forward(Runtime& rt, const Tensor& input, const Tensor& weight,
+                                    const Tensor& bias, int64_t stride, int64_t padding) {
+    const auto& in_shape = input.type().shape();
+    const auto& w_shape = weight.type().shape();
+
+    if (in_shape.size() != 4 || w_shape.size() != 4) {
+        return Error{"Conv2DOp: input must be 4D (N,C,H,W) and weight 4D (OC,IC,KH,KW)"};
+    }
+
+    auto N = in_shape[0], C = in_shape[1], H = in_shape[2], W = in_shape[3];
+    auto OC = w_shape[0], IC = w_shape[1], KH = w_shape[2], KW = w_shape[3];
+
+    if (C != IC) return Error{"Conv2DOp: channel mismatch"};
+
+    int64_t OH = (H + 2 * padding - KH) / stride + 1;
+    int64_t OW = (W + 2 * padding - KW) / stride + 1;
+
+    auto out_type = TensorType::contiguous({N, OC, OH, OW}, input.type().dtype());
+    bool need_grad = input.requires_grad() || weight.requires_grad() || bias.requires_grad();
+    auto out = Tensor(out_type, rt.allocator().allocate(out_type), need_grad);
+
+    RETURN_IF_ERROR(cpu::conv2d(out, input, weight, stride, padding));
+
+    // Add bias
+    if (bias.defined() && bias.type().numel() > 0) {
+        auto* o_ptr = out.data<float>();
+        auto* b_ptr = bias.data<const float>();
+        for (int64_t n = 0; n < N; ++n) {
+            for (int64_t oc = 0; oc < OC; ++oc) {
+                for (int64_t oh = 0; oh < OH; ++oh) {
+                    for (int64_t ow = 0; ow < OW; ++ow) {
+                        o_ptr[n * OC * OH * OW + oc * OH * OW + oh * OW + ow] += b_ptr[oc];
+                    }
+                }
+            }
+        }
+    }
+
+    if (need_grad) {
+        GraphNode node;
+        node.op = OpType::Conv2D;
+        node.inputs = {input, weight, bias};
+        node.output = out;
+        node.runtime = &rt;
+        // Store stride/padding in op_data as a 2-element tensor
+        auto meta_type = TensorType::contiguous({2}, DType::Int64);
+        Tensor meta(meta_type, rt.allocator().allocate(meta_type), false);
+        meta.data<int64_t>()[0] = stride;
+        meta.data<int64_t>()[1] = padding;
+        node.op_data = meta;
+        rt.autograd().graph().append(std::move(node));
+    }
+
+    return out;
+}
+
+Expected<void> Conv2DOp::backward(Runtime& rt, const GraphNode& node, GradientMap& grads) {
+    const Tensor& input = node.inputs[0];
+    const Tensor& weight = node.inputs[1];
+    const Tensor& bias = node.inputs[2];
+    int64_t stride = node.op_data.data<const int64_t>()[0];
+    int64_t padding = node.op_data.data<const int64_t>()[1];
+
+    auto grad_it = grads.find(node.output.id());
+    if (grad_it == grads.end()) return {};
+    Tensor grad_out = grad_it->second;
+
+    const auto& in_shape = input.type().shape();
+    const auto& w_shape = weight.type().shape();
+    auto N = in_shape[0], C = in_shape[1], H = in_shape[2], W = in_shape[3];
+    auto OC = w_shape[0], IC = w_shape[1], KH = w_shape[2], KW = w_shape[3];
+    auto OH = grad_out.type().shape()[2], OW = grad_out.type().shape()[3];
+
+    // d_input: conv transpose of grad_out with weight
+    if (input.requires_grad()) {
+        auto di_type = TensorType::contiguous({N, C, H, W}, input.type().dtype());
+        Tensor di(di_type, rt.allocator().allocate(di_type), false);
+        auto* di_ptr = di.data<float>();
+        auto* go_ptr = grad_out.data<const float>();
+        auto* w_ptr = weight.data<const float>();
+
+        for (int64_t n = 0; n < N; ++n) {
+            for (int64_t c = 0; c < C; ++c) {
+                for (int64_t h = 0; h < H; ++h) {
+                    for (int64_t w = 0; w < W; ++w) {
+                        float sum = 0.0f;
+                        for (int64_t oc = 0; oc < OC; ++oc) {
+                            for (int64_t kh = 0; kh < KH; ++kh) {
+                                for (int64_t kw = 0; kw < KW; ++kw) {
+                                    int64_t oh = (h + padding - kh);
+                                    int64_t ow = (w + padding - kw);
+                                    if (oh % stride == 0 && ow % stride == 0) {
+                                        oh /= stride;
+                                        ow /= stride;
+                                        if (oh >= 0 && oh < OH && ow >= 0 && ow < OW) {
+                                            sum += go_ptr[n * OC * OH * OW + oc * OH * OW + oh * OW + ow]
+                                                 * w_ptr[oc * IC * KH * KW + c * KH * KW + kh * KW + kw];
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        di_ptr[n * C * H * W + c * H * W + h * W + w] = sum;
+                    }
+                }
+            }
+        }
+
+        auto it = grads.find(input.id());
+        if (it != grads.end()) {
+            cpu::add(it->second, it->second, di);
+        } else {
+            grads[input.id()] = di;
+        }
+    }
+
+    // d_weight
+    if (weight.requires_grad()) {
+        auto dw_type = TensorType::contiguous({OC, IC, KH, KW}, weight.type().dtype());
+        Tensor dw(dw_type, rt.allocator().allocate(dw_type), false);
+        auto* dw_ptr = dw.data<float>();
+        auto* inp_ptr = input.data<const float>();
+        auto* go_ptr = grad_out.data<const float>();
+
+        for (int64_t oc = 0; oc < OC; ++oc) {
+            for (int64_t ic = 0; ic < IC; ++ic) {
+                for (int64_t kh = 0; kh < KH; ++kh) {
+                    for (int64_t kw = 0; kw < KW; ++kw) {
+                        float sum = 0.0f;
+                        for (int64_t n = 0; n < N; ++n) {
+                            for (int64_t oh = 0; oh < OH; ++oh) {
+                                for (int64_t ow = 0; ow < OW; ++ow) {
+                                    int64_t ih = oh * stride + kh - padding;
+                                    int64_t iw = ow * stride + kw - padding;
+                                    if (ih >= 0 && ih < H && iw >= 0 && iw < W) {
+                                        sum += inp_ptr[n * C * H * W + ic * H * W + ih * W + iw]
+                                             * go_ptr[n * OC * OH * OW + oc * OH * OW + oh * OW + ow];
+                                    }
+                                }
+                            }
+                        }
+                        dw_ptr[oc * IC * KH * KW + ic * KH * KW + kh * KW + kw] = sum;
+                    }
+                }
+            }
+        }
+
+        auto it = grads.find(weight.id());
+        if (it != grads.end()) {
+            cpu::add(it->second, it->second, dw);
+        } else {
+            grads[weight.id()] = dw;
+        }
+    }
+
+    // d_bias: sum grad_out over N, H, W per output channel
+    if (bias.defined() && bias.requires_grad() && bias.type().numel() > 0) {
+        auto db_type = TensorType::contiguous({OC}, DType::Float32);
+        Tensor db(db_type, rt.allocator().allocate(db_type), false);
+        auto* db_ptr = db.data<float>();
+        auto* go_ptr = grad_out.data<const float>();
+
+        for (int64_t oc = 0; oc < OC; ++oc) {
+            float sum = 0.0f;
+            for (int64_t n = 0; n < N; ++n) {
+                for (int64_t oh = 0; oh < OH; ++oh) {
+                    for (int64_t ow = 0; ow < OW; ++ow) {
+                        sum += go_ptr[n * OC * OH * OW + oc * OH * OW + oh * OW + ow];
+                    }
+                }
+            }
+            db_ptr[oc] = sum;
+        }
+
+        auto it = grads.find(bias.id());
+        if (it != grads.end()) {
+            cpu::add(it->second, it->second, db);
+        } else {
+            grads[bias.id()] = db;
+        }
+    }
+
+    return {};
+}
+
+// ── MaxPool2dOp ────────────────────────────────────────────────────────
+
+Expected<Tensor> MaxPool2dOp::forward(Runtime& rt, const Tensor& input, int64_t kernel, int64_t stride) {
+    const auto& in_shape = input.type().shape();
+    if (in_shape.size() != 4) {
+        return Error{"MaxPool2dOp: input must be 4D (N,C,H,W)"};
+    }
+
+    auto N = in_shape[0], C = in_shape[1], H = in_shape[2], W = in_shape[3];
+    int64_t OH = (H - kernel) / stride + 1;
+    int64_t OW = (W - kernel) / stride + 1;
+
+    auto out_type = TensorType::contiguous({N, C, OH, OW}, input.type().dtype());
+    auto out = Tensor(out_type, rt.allocator().allocate(out_type), input.requires_grad());
+
+    RETURN_IF_ERROR(cpu::maxpool2d(out, input, kernel, stride));
+
+    if (input.requires_grad()) {
+        GraphNode node;
+        node.op = OpType::MaxPool2d;
+        node.inputs = {input};
+        node.output = out;
+        node.runtime = &rt;
+        // Store kernel/stride in op_data
+        auto meta_type = TensorType::contiguous({2}, DType::Int64);
+        Tensor meta(meta_type, rt.allocator().allocate(meta_type), false);
+        meta.data<int64_t>()[0] = kernel;
+        meta.data<int64_t>()[1] = stride;
+        node.op_data = meta;
+        rt.autograd().graph().append(std::move(node));
+    }
+
+    return out;
+}
+
+Expected<void> MaxPool2dOp::backward(Runtime& rt, const GraphNode& node, GradientMap& grads) {
+    const Tensor& input = node.inputs[0];
+    int64_t kernel = node.op_data.data<const int64_t>()[0];
+    int64_t stride = node.op_data.data<const int64_t>()[1];
+
+    auto grad_it = grads.find(node.output.id());
+    if (grad_it == grads.end()) return {};
+
+    const auto& in_shape = input.type().shape();
+    auto N = in_shape[0], C = in_shape[1], H = in_shape[2], W = in_shape[3];
+    auto OH = node.output.type().shape()[2], OW = node.output.type().shape()[3];
+
+    auto dx_type = TensorType::contiguous({N, C, H, W}, input.type().dtype());
+    Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
+    auto* dx_ptr = dx.data<float>();
+    Tensor grad_out = grad_it->second;
+    auto* inp_ptr = input.data<const float>();
+    auto* go_ptr = grad_out.data<const float>();
+
+    // Upstream gradient only flows to the max element in each pool window
+    for (int64_t n = 0; n < N; ++n) {
+        for (int64_t c = 0; c < C; ++c) {
+            for (int64_t oh = 0; oh < OH; ++oh) {
+                for (int64_t ow = 0; ow < OW; ++ow) {
+                    // Find argmax in this window
+                    int64_t argmax_h = 0, argmax_w = 0;
+                    float max_val = -std::numeric_limits<float>::infinity();
+                    for (int64_t kh = 0; kh < kernel; ++kh) {
+                        for (int64_t kw = 0; kw < kernel; ++kw) {
+                            int64_t ih = oh * stride + kh;
+                            int64_t iw = ow * stride + kw;
+                            if (ih < H && iw < W) {
+                                float val = inp_ptr[n * C * H * W + c * H * W + ih * W + iw];
+                                if (val > max_val) {
+                                    max_val = val;
+                                    argmax_h = kh;
+                                    argmax_w = kw;
+                                }
+                            }
+                        }
+                    }
+                    int64_t ih = oh * stride + argmax_h;
+                    int64_t iw = ow * stride + argmax_w;
+                    dx_ptr[n * C * H * W + c * H * W + ih * W + iw] += go_ptr[n * C * OH * OW + c * OH * OW + oh * OW + ow];
+                }
+            }
+        }
+    }
+
+    auto it = grads.find(input.id());
+    if (it != grads.end()) {
+        cpu::add(it->second, it->second, dx);
+    } else {
+        grads[input.id()] = dx;
+    }
+
+    return {};
+}
+
+// ── BatchNormOp ────────────────────────────────────────────────────────
+
+Expected<Tensor> BatchNormOp::forward(Runtime& rt, const Tensor& input,
+                                       const Tensor& gamma, const Tensor& beta,
+                                       const Tensor& running_mean, const Tensor& running_var,
+                                       float momentum, float epsilon, bool training) {
+    auto out_type = TensorType::contiguous(input.type().shape(), input.type().dtype());
+    bool need_grad = input.requires_grad() || gamma.requires_grad() || beta.requires_grad();
+    auto out = Tensor(out_type, rt.allocator().allocate(out_type), need_grad);
+
+    RETURN_IF_ERROR(cpu::batchnorm(out, input, gamma, beta, running_mean, running_var, momentum, epsilon, training));
+
+    if (need_grad) {
+        GraphNode node;
+        node.op = OpType::BatchNorm;
+        node.inputs = {input, gamma, beta, running_mean, running_var};
+        node.output = out;
+        node.runtime = &rt;
+        // Store momentum, epsilon, training flag in op_data
+        auto meta_type = TensorType::contiguous({3}, DType::Float32);
+        Tensor meta(meta_type, rt.allocator().allocate(meta_type), false);
+        meta.data<float>()[0] = momentum;
+        meta.data<float>()[1] = epsilon;
+        meta.data<float>()[2] = training ? 1.0f : 0.0f;
+        node.op_data = meta;
+        rt.autograd().graph().append(std::move(node));
+    }
+
+    return out;
+}
+
+Expected<void> BatchNormOp::backward(Runtime& rt, const GraphNode& node, GradientMap& grads) {
+    const Tensor& input = node.inputs[0];
+    const Tensor& gamma = node.inputs[1];
+    const Tensor& beta = node.inputs[2];
+    float epsilon = node.op_data.data<const float>()[1];
+
+    auto grad_it = grads.find(node.output.id());
+    if (grad_it == grads.end()) return {};
+    Tensor grad_out = grad_it->second;
+
+    const auto& in_shape = input.type().shape();
+    int64_t N = in_shape[0], C = in_shape[1];
+    int64_t spatial = 1;
+    for (size_t i = 2; i < in_shape.size(); ++i) spatial *= in_shape[i];
+    int64_t num_elements = N * spatial;
+
+    auto* inp = input.data<const float>();
+    auto* g = gamma.data<const float>();
+    auto* go = grad_out.data<const float>();
+
+    // Compute mean and variance
+    std::vector<float> mean(C, 0.0f);
+    for (int64_t n = 0; n < N; ++n)
+        for (int64_t c = 0; c < C; ++c) {
+            float sum = 0.0f;
+            for (int64_t s = 0; s < spatial; ++s)
+                sum += inp[n * C * spatial + c * spatial + s];
+            mean[c] += sum;
+        }
+    for (int64_t c = 0; c < C; ++c) mean[c] /= static_cast<float>(num_elements);
+
+    std::vector<float> var(C, 0.0f);
+    for (int64_t n = 0; n < N; ++n)
+        for (int64_t c = 0; c < C; ++c) {
+            float sum = 0.0f;
+            for (int64_t s = 0; s < spatial; ++s) {
+                float diff = inp[n * C * spatial + c * spatial + s] - mean[c];
+                sum += diff * diff;
+            }
+            var[c] += sum;
+        }
+    for (int64_t c = 0; c < C; ++c) var[c] /= static_cast<float>(num_elements);
+
+    std::vector<float> inv_std(C);
+    for (int64_t c = 0; c < C; ++c)
+        inv_std[c] = 1.0f / std::sqrt(var[c] + epsilon);
+
+    // d_gamma = sum(grad_out * x_hat) over N and spatial
+    if (gamma.requires_grad()) {
+        auto dg_type = TensorType::contiguous({C}, DType::Float32);
+        Tensor dg(dg_type, rt.allocator().allocate(dg_type), false);
+        auto* dg_ptr = dg.data<float>();
+
+        for (int64_t c = 0; c < C; ++c) {
+            float sum = 0.0f;
+            for (int64_t n = 0; n < N; ++n)
+                for (int64_t s = 0; s < spatial; ++s) {
+                    float x_hat = (inp[n * C * spatial + c * spatial + s] - mean[c]) * inv_std[c];
+                    sum += go[n * C * spatial + c * spatial + s] * x_hat;
+                }
+            dg_ptr[c] = sum;
+        }
+
+        auto it = grads.find(gamma.id());
+        if (it != grads.end()) {
+            cpu::add(it->second, it->second, dg);
+        } else {
+            grads[gamma.id()] = dg;
+        }
+    }
+
+    // d_beta = sum(grad_out) over N and spatial
+    if (beta.requires_grad()) {
+        auto db_type = TensorType::contiguous({C}, DType::Float32);
+        Tensor db(db_type, rt.allocator().allocate(db_type), false);
+        auto* db_ptr = db.data<float>();
+
+        for (int64_t c = 0; c < C; ++c) {
+            float sum = 0.0f;
+            for (int64_t n = 0; n < N; ++n)
+                for (int64_t s = 0; s < spatial; ++s)
+                    sum += go[n * C * spatial + c * spatial + s];
+            db_ptr[c] = sum;
+        }
+
+        auto it = grads.find(beta.id());
+        if (it != grads.end()) {
+            cpu::add(it->second, it->second, db);
+        } else {
+            grads[beta.id()] = db;
+        }
+    }
+
+    // d_input
+    if (input.requires_grad()) {
+        auto di_type = TensorType::contiguous(in_shape, DType::Float32);
+        Tensor di(di_type, rt.allocator().allocate(di_type), false);
+        auto* di_ptr = di.data<float>();
+
+        for (int64_t n = 0; n < N; ++n) {
+            for (int64_t c = 0; c < C; ++c) {
+                float inv_N = 1.0f / static_cast<float>(num_elements);
+                float g_val = g[c];
+                float istd = inv_std[c];
+                float x_mean_sum = 0.0f;
+                float go_sum = 0.0f;
+
+                for (int64_t s = 0; s < spatial; ++s) {
+                    int64_t idx = n * C * spatial + c * spatial + s;
+                    float x_hat = (inp[idx] - mean[c]) * istd;
+                    x_mean_sum += x_hat;
+                    go_sum += go[idx];
+                }
+
+                for (int64_t s = 0; s < spatial; ++s) {
+                    int64_t idx = n * C * spatial + c * spatial + s;
+                    float x_hat = (inp[idx] - mean[c]) * istd;
+                    di_ptr[idx] = g_val * istd * inv_N * (
+                        static_cast<float>(num_elements) * go[idx] - go_sum - x_hat * x_mean_sum
+                    );
+                }
+            }
+        }
+
+        auto it = grads.find(input.id());
+        if (it != grads.end()) {
+            cpu::add(it->second, it->second, di);
+        } else {
+            grads[input.id()] = di;
+        }
+    }
+
+    return {};
+}
+
+// ── LayerNormOp ────────────────────────────────────────────────────────
+
+Expected<Tensor> LayerNormOp::forward(Runtime& rt, const Tensor& input,
+                                       const Tensor& gamma, const Tensor& beta, float epsilon) {
+    auto out_type = TensorType::contiguous(input.type().shape(), input.type().dtype());
+    bool need_grad = input.requires_grad() || gamma.requires_grad() || beta.requires_grad();
+    auto out = Tensor(out_type, rt.allocator().allocate(out_type), need_grad);
+
+    RETURN_IF_ERROR(cpu::layernorm(out, input, gamma, beta, epsilon));
+
+    if (need_grad) {
+        GraphNode node;
+        node.op = OpType::LayerNorm;
+        node.inputs = {input, gamma, beta};
+        node.output = out;
+        node.runtime = &rt;
+        // Store epsilon in op_data
+        auto meta_type = TensorType::contiguous({1}, DType::Float32);
+        Tensor meta(meta_type, rt.allocator().allocate(meta_type), false);
+        meta.data<float>()[0] = epsilon;
+        node.op_data = meta;
+        rt.autograd().graph().append(std::move(node));
+    }
+
+    return out;
+}
+
+Expected<void> LayerNormOp::backward(Runtime& rt, const GraphNode& node, GradientMap& grads) {
+    const Tensor& input = node.inputs[0];
+    const Tensor& gamma = node.inputs[1];
+    const Tensor& beta = node.inputs[2];
+    float epsilon = node.op_data.data<const float>()[0];
+
+    auto grad_it = grads.find(node.output.id());
+    if (grad_it == grads.end()) return {};
+    Tensor grad_out = grad_it->second;
+
+    const auto& in_shape = input.type().shape();
+    auto N = in_shape[0];
+    int64_t D = 1;
+    for (size_t i = 1; i < in_shape.size(); ++i) D *= in_shape[i];
+
+    auto* inp = input.data<const float>();
+    auto* g = gamma.data<const float>();
+    auto* go = grad_out.data<const float>();
+
+    // Compute mean and variance per sample
+    std::vector<float> mean(N), var(N), inv_std(N);
+    for (int64_t n = 0; n < N; ++n) {
+        float m = 0.0f;
+        for (int64_t d = 0; d < D; ++d) m += inp[n * D + d];
+        mean[n] = m / static_cast<float>(D);
+
+        float v = 0.0f;
+        for (int64_t d = 0; d < D; ++d) {
+            float diff = inp[n * D + d] - mean[n];
+            v += diff * diff;
+        }
+        var[n] = v / static_cast<float>(D);
+        inv_std[n] = 1.0f / std::sqrt(var[n] + epsilon);
+    }
+
+    // d_gamma = sum(grad_out * x_hat) over N
+    if (gamma.requires_grad()) {
+        auto dg_type = TensorType::contiguous({D}, DType::Float32);
+        Tensor dg(dg_type, rt.allocator().allocate(dg_type), false);
+        auto* dg_ptr = dg.data<float>();
+
+        for (int64_t d = 0; d < D; ++d) {
+            float sum = 0.0f;
+            for (int64_t n = 0; n < N; ++n) {
+                float x_hat = (inp[n * D + d] - mean[n]) * inv_std[n];
+                sum += go[n * D + d] * x_hat;
+            }
+            dg_ptr[d] = sum;
+        }
+
+        auto it = grads.find(gamma.id());
+        if (it != grads.end()) {
+            cpu::add(it->second, it->second, dg);
+        } else {
+            grads[gamma.id()] = dg;
+        }
+    }
+
+    // d_beta = sum(grad_out) over N
+    if (beta.requires_grad()) {
+        auto db_type = TensorType::contiguous({D}, DType::Float32);
+        Tensor db(db_type, rt.allocator().allocate(db_type), false);
+        auto* db_ptr = db.data<float>();
+
+        for (int64_t d = 0; d < D; ++d) {
+            float sum = 0.0f;
+            for (int64_t n = 0; n < N; ++n) sum += go[n * D + d];
+            db_ptr[d] = sum;
+        }
+
+        auto it = grads.find(beta.id());
+        if (it != grads.end()) {
+            cpu::add(it->second, it->second, db);
+        } else {
+            grads[beta.id()] = db;
+        }
+    }
+
+    // d_input
+    if (input.requires_grad()) {
+        auto di_type = TensorType::contiguous(in_shape, DType::Float32);
+        Tensor di(di_type, rt.allocator().allocate(di_type), false);
+        auto* di_ptr = di.data<float>();
+
+        for (int64_t n = 0; n < N; ++n) {
+            float inv_D = 1.0f / static_cast<float>(D);
+            float istd = inv_std[n];
+
+            // Precompute sums
+            float sum1 = 0.0f, sum2 = 0.0f;
+            for (int64_t d = 0; d < D; ++d) {
+                float x_hat = (inp[n * D + d] - mean[n]) * istd;
+                sum1 += go[n * D + d] * g[d];
+                sum2 += go[n * D + d] * g[d] * x_hat;
+            }
+
+            for (int64_t d = 0; d < D; ++d) {
+                float x_hat = (inp[n * D + d] - mean[n]) * istd;
+                di_ptr[n * D + d] = istd * (
+                    go[n * D + d] * g[d] - inv_D * sum1 - x_hat * inv_D * sum2
+                );
+            }
+        }
+
+        auto it = grads.find(input.id());
+        if (it != grads.end()) {
+            cpu::add(it->second, it->second, di);
+        } else {
+            grads[input.id()] = di;
+        }
+    }
+
+    return {};
+}
+
 // ── Autograd ──────────────────────────────────────────────────────────
 
 Expected<void> Autograd::backward(Runtime& runtime, const Tensor& loss) {
@@ -462,6 +1052,22 @@ Expected<void> Autograd::backward(Runtime& runtime, const Tensor& loss) {
             }
             case OpType::MSE: {
                 RETURN_IF_ERROR(MSELossOp::backward(*node.runtime, node, grads_));
+                break;
+            }
+            case OpType::Conv2D: {
+                RETURN_IF_ERROR(Conv2DOp::backward(*node.runtime, node, grads_));
+                break;
+            }
+            case OpType::MaxPool2d: {
+                RETURN_IF_ERROR(MaxPool2dOp::backward(*node.runtime, node, grads_));
+                break;
+            }
+            case OpType::BatchNorm: {
+                RETURN_IF_ERROR(BatchNormOp::backward(*node.runtime, node, grads_));
+                break;
+            }
+            case OpType::LayerNorm: {
+                RETURN_IF_ERROR(LayerNormOp::backward(*node.runtime, node, grads_));
                 break;
             }
         }

@@ -16,6 +16,10 @@ enum class OpType : uint8_t {
     Add,
     CrossEntropyLoss,
     MSE,
+    Conv2D,
+    MaxPool2d,
+    BatchNorm,
+    LayerNorm,
 };
 
 struct GraphNode {
@@ -52,6 +56,31 @@ struct ReLUOp {
 
 struct AddOp {
     static Expected<Tensor> forward(Runtime& rt, const Tensor& a, const Tensor& b);
+    static Expected<void> backward(Runtime& rt, const GraphNode& node, GradientMap& grads);
+};
+
+struct Conv2DOp {
+    static Expected<Tensor> forward(Runtime& rt, const Tensor& input, const Tensor& weight,
+                                    const Tensor& bias, int64_t stride, int64_t padding);
+    static Expected<void> backward(Runtime& rt, const GraphNode& node, GradientMap& grads);
+};
+
+struct MaxPool2dOp {
+    static Expected<Tensor> forward(Runtime& rt, const Tensor& input, int64_t kernel, int64_t stride);
+    static Expected<void> backward(Runtime& rt, const GraphNode& node, GradientMap& grads);
+};
+
+struct BatchNormOp {
+    static Expected<Tensor> forward(Runtime& rt, const Tensor& input,
+                                    const Tensor& gamma, const Tensor& beta,
+                                    const Tensor& running_mean, const Tensor& running_var,
+                                    float momentum, float epsilon, bool training);
+    static Expected<void> backward(Runtime& rt, const GraphNode& node, GradientMap& grads);
+};
+
+struct LayerNormOp {
+    static Expected<Tensor> forward(Runtime& rt, const Tensor& input,
+                                    const Tensor& gamma, const Tensor& beta, float epsilon);
     static Expected<void> backward(Runtime& rt, const GraphNode& node, GradientMap& grads);
 };
 

@@ -31,4 +31,24 @@ Expected<Tensor> Runtime::add(const Tensor& a, const Tensor& b) {
     return AddOp::forward(*this, a, b);
 }
 
+Expected<Tensor> Runtime::conv2d(const Tensor& input, const Tensor& weight, const Tensor& bias,
+                                  int64_t stride, int64_t padding) {
+    return Conv2DOp::forward(*this, input, weight, bias, stride, padding);
+}
+
+Expected<Tensor> Runtime::maxpool2d(const Tensor& input, int64_t kernel, int64_t stride) {
+    return MaxPool2dOp::forward(*this, input, kernel, stride);
+}
+
+Expected<Tensor> Runtime::batchnorm(const Tensor& input, const Tensor& gamma, const Tensor& beta,
+                                     const Tensor& running_mean, const Tensor& running_var,
+                                     float momentum, float epsilon, bool training) {
+    return BatchNormOp::forward(*this, input, gamma, beta, running_mean, running_var, momentum, epsilon, training);
+}
+
+Expected<Tensor> Runtime::layernorm(const Tensor& input, const Tensor& gamma, const Tensor& beta,
+                                     float epsilon) {
+    return LayerNormOp::forward(*this, input, gamma, beta, epsilon);
+}
+
 } // namespace axon
