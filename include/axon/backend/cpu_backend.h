@@ -23,6 +23,8 @@ Expected<void> conv2d(Tensor& out, const Tensor& input, const Tensor& weight,
 // Pooling
 Expected<void> maxpool2d(Tensor& out, const Tensor& input,
                          int64_t kernel, int64_t stride);
+Expected<void> avgpool2d(Tensor& out, const Tensor& input,
+                         int64_t kernel, int64_t stride);
 
 // Normalization
 Expected<void> batchnorm(Tensor& out, const Tensor& input,

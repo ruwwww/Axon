@@ -18,6 +18,7 @@ enum class OpType : uint8_t {
     MSE,
     Conv2D,
     MaxPool2d,
+    AvgPool2d,
     BatchNorm,
     LayerNorm,
 };
@@ -66,6 +67,11 @@ struct Conv2DOp {
 };
 
 struct MaxPool2dOp {
+    static Expected<Tensor> forward(Runtime& rt, const Tensor& input, int64_t kernel, int64_t stride);
+    static Expected<void> backward(Runtime& rt, const GraphNode& node, GradientMap& grads);
+};
+
+struct AvgPool2dOp {
     static Expected<Tensor> forward(Runtime& rt, const Tensor& input, int64_t kernel, int64_t stride);
     static Expected<void> backward(Runtime& rt, const GraphNode& node, GradientMap& grads);
 };

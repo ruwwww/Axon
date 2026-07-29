@@ -709,6 +709,88 @@ Expected<void> MaxPool2dOp::backward(Runtime& rt, const GraphNode& node, Gradien
     return {};
 }
 
+// ── AvgPool2dOp ────────────────────────────────────────────────────────
+
+Expected<Tensor> AvgPool2dOp::forward(Runtime& rt, const Tensor& input, int64_t kernel, int64_t stride) {
+    const auto& in_shape = input.type().shape();
+    if (in_shape.size() != 4) {
+        return Error{"AvgPool2dOp: input must be 4D (N,C,H,W)"};
+    }
+
+    auto N = in_shape[0], C = in_shape[1], H = in_shape[2], W = in_shape[3];
+    int64_t OH = (H - kernel) / stride + 1;
+    int64_t OW = (W - kernel) / stride + 1;
+
+    auto out_type = TensorType::contiguous({N, C, OH, OW}, input.type().dtype());
+    auto out = Tensor(out_type, rt.allocator().allocate(out_type), input.requires_grad());
+
+    RETURN_IF_ERROR(cpu::avgpool2d(out, input, kernel, stride));
+
+    if (input.requires_grad()) {
+        GraphNode node;
+        node.op = OpType::AvgPool2d;
+        node.inputs = {input};
+        node.output = out;
+        node.runtime = &rt;
+        auto meta_type = TensorType::contiguous({2}, DType::Int64);
+        Tensor meta(meta_type, rt.allocator().allocate(meta_type), false);
+        meta.data<int64_t>()[0] = kernel;
+        meta.data<int64_t>()[1] = stride;
+        node.op_data = meta;
+        rt.autograd().graph().append(std::move(node));
+    }
+
+    return out;
+}
+
+Expected<void> AvgPool2dOp::backward(Runtime& rt, const GraphNode& node, GradientMap& grads) {
+    const Tensor& input = node.inputs[0];
+    int64_t kernel = node.op_data.data<const int64_t>()[0];
+    int64_t stride = node.op_data.data<const int64_t>()[1];
+
+    auto grad_it = grads.find(node.output.id());
+    if (grad_it == grads.end()) return {};
+
+    const auto& in_shape = input.type().shape();
+    auto N = in_shape[0], C = in_shape[1], H = in_shape[2], W = in_shape[3];
+    auto OH = node.output.type().shape()[2], OW = node.output.type().shape()[3];
+
+    auto dx_type = TensorType::contiguous({N, C, H, W}, input.type().dtype());
+    Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
+    auto* dx_ptr = dx.data<float>();
+    Tensor grad_out = grad_it->second;
+    auto* go_ptr = grad_out.data<const float>();
+
+    float inv_k = 1.0f / static_cast<float>(kernel * kernel);
+    for (int64_t n = 0; n < N; ++n) {
+        for (int64_t c = 0; c < C; ++c) {
+            for (int64_t oh = 0; oh < OH; ++oh) {
+                for (int64_t ow = 0; ow < OW; ++ow) {
+                    float g = go_ptr[n * C * OH * OW + c * OH * OW + oh * OW + ow];
+                    for (int64_t kh = 0; kh < kernel; ++kh) {
+                        for (int64_t kw = 0; kw < kernel; ++kw) {
+                            int64_t ih = oh * stride + kh;
+                            int64_t iw = ow * stride + kw;
+                            if (ih < H && iw < W) {
+                                dx_ptr[n * C * H * W + c * H * W + ih * W + iw] += g * inv_k;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    auto it = grads.find(input.id());
+    if (it != grads.end()) {
+        cpu::add(it->second, it->second, dx);
+    } else {
+        grads[input.id()] = dx;
+    }
+
+    return {};
+}
+
 // ── BatchNormOp ────────────────────────────────────────────────────────
 
 Expected<Tensor> BatchNormOp::forward(Runtime& rt, const Tensor& input,
@@ -1060,6 +1142,10 @@ Expected<void> Autograd::backward(Runtime& runtime, const Tensor& loss) {
             }
             case OpType::MaxPool2d: {
                 RETURN_IF_ERROR(MaxPool2dOp::backward(*node.runtime, node, grads_));
+                break;
+            }
+            case OpType::AvgPool2d: {
+                RETURN_IF_ERROR(AvgPool2dOp::backward(*node.runtime, node, grads_));
                 break;
             }
             case OpType::BatchNorm: {

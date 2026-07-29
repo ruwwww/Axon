@@ -263,6 +263,43 @@ Expected<void> maxpool2d(Tensor& out, const Tensor& input,
     return {};
 }
 
+Expected<void> avgpool2d(Tensor& out, const Tensor& input,
+                         int64_t kernel, int64_t stride) {
+    const auto& in_shape = input.type().shape();
+    const auto& out_shape = out.type().shape();
+
+    if (in_shape.size() != 4 || out_shape.size() != 4) {
+        return Error{"cpu::avgpool2d: all inputs must be 4D (N, C, H, W)"};
+    }
+
+    auto N = in_shape[0], C = in_shape[1], H = in_shape[2], W = in_shape[3];
+    auto OH = out_shape[2], OW = out_shape[3];
+
+    auto* inp = input.data<const float>();
+    auto* o = out.data<float>();
+
+    for (int64_t n = 0; n < N; ++n) {
+        for (int64_t c = 0; c < C; ++c) {
+            for (int64_t oh = 0; oh < OH; ++oh) {
+                for (int64_t ow = 0; ow < OW; ++ow) {
+                    float sum = 0.0f;
+                    for (int64_t kh = 0; kh < kernel; ++kh) {
+                        for (int64_t kw = 0; kw < kernel; ++kw) {
+                            int64_t ih = oh * stride + kh;
+                            int64_t iw = ow * stride + kw;
+                            if (ih < H && iw < W) {
+                                sum += inp[n * C * H * W + c * H * W + ih * W + iw];
+                            }
+                        }
+                    }
+                    o[n * C * OH * OW + c * OH * OW + oh * OW + ow] = sum / static_cast<float>(kernel * kernel);
+                }
+            }
+        }
+    }
+    return {};
+}
+
 // ── BatchNorm ──────────────────────────────────────────────────────────
 
 Expected<void> batchnorm(Tensor& out, const Tensor& input,

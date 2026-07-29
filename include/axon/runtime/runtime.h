@@ -26,6 +26,7 @@ public:
     Expected<Tensor> conv2d(const Tensor& input, const Tensor& weight, const Tensor& bias,
                             int64_t stride = 1, int64_t padding = 0);
     Expected<Tensor> maxpool2d(const Tensor& input, int64_t kernel, int64_t stride);
+    Expected<Tensor> avgpool2d(const Tensor& input, int64_t kernel, int64_t stride);
     Expected<Tensor> batchnorm(const Tensor& input, const Tensor& gamma, const Tensor& beta,
                                const Tensor& running_mean, const Tensor& running_var,
                                float momentum, float epsilon, bool training);

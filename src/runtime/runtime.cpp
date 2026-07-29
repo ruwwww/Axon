@@ -40,6 +40,10 @@ Expected<Tensor> Runtime::maxpool2d(const Tensor& input, int64_t kernel, int64_t
     return MaxPool2dOp::forward(*this, input, kernel, stride);
 }
 
+Expected<Tensor> Runtime::avgpool2d(const Tensor& input, int64_t kernel, int64_t stride) {
+    return AvgPool2dOp::forward(*this, input, kernel, stride);
+}
+
 Expected<Tensor> Runtime::batchnorm(const Tensor& input, const Tensor& gamma, const Tensor& beta,
                                      const Tensor& running_mean, const Tensor& running_var,
                                      float momentum, float epsilon, bool training) {
