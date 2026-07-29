@@ -1,6 +1,9 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include "axon/core/expected.h"
+#include "axon/core/types.h"
 #include "axon/tensor/tensor.h"
 
 namespace axon::cpu {
@@ -25,6 +28,13 @@ Expected<void> maxpool2d(Tensor& out, const Tensor& input,
                          int64_t kernel, int64_t stride);
 Expected<void> avgpool2d(Tensor& out, const Tensor& input,
                          int64_t kernel, int64_t stride);
+
+// Quantization
+size_t quantized_size(size_t num_elements, QuantFormat format);
+size_t quantized_size_2d(int64_t M, int64_t K, QuantFormat format);
+Expected<void> quantize(Tensor& dst, const Tensor& src, QuantFormat format);
+Expected<void> dequantize(Tensor& dst, const Tensor& src);
+Expected<void> matmul_q4(Tensor& out, const Tensor& a, const Tensor& b);
 
 // Normalization
 Expected<void> batchnorm(Tensor& out, const Tensor& input,

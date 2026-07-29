@@ -43,7 +43,12 @@ public:
 
     size_t size_bytes() const {
         if (quant_ != QuantFormat::None) {
-            return numel() * size_of(dtype_);
+            size_t num_blocks = (static_cast<size_t>(numel()) + 31) / 32;
+            switch (quant_) {
+                case QuantFormat::Q8_0: return num_blocks * 34;
+                case QuantFormat::Q4_0: return num_blocks * 18;
+                default: return 0;
+            }
         }
         return static_cast<size_t>(numel()) * size_of(dtype_);
     }
