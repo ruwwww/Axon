@@ -442,6 +442,50 @@ Expected<void> layernorm(Tensor& out, const Tensor& input,
     return {};
 }
 
+// ── reduce_mean ─────────────────────────────────────────────────────────
+
+Expected<void> reduce_mean(Tensor& out, const Tensor& input, const std::vector<int64_t>& dims) {
+    const auto& shape = input.type().shape();
+    auto ndim = shape.size();
+
+    std::vector<bool> is_reduced(ndim, false);
+    int64_t reduction_size = 1;
+    for (auto d : dims) {
+        if (d < 0 || static_cast<size_t>(d) >= ndim)
+            return Error{"cpu::reduce_mean: dim out of range"};
+        is_reduced[d] = true;
+        reduction_size *= shape[d];
+    }
+
+    auto* inp = input.data<const float>();
+    auto* o = out.data<float>();
+    auto numel = input.type().numel();
+    auto out_numel = out.type().numel();
+
+    std::fill(o, o + out_numel, 0.0f);
+
+    std::vector<int64_t> idx(ndim, 0);
+    for (int64_t flat = 0; flat < numel; ++flat) {
+        int64_t tmp = flat;
+        for (int d = static_cast<int>(ndim) - 1; d >= 0; --d) {
+            idx[d] = tmp % shape[d];
+            tmp /= shape[d];
+        }
+
+        int64_t out_flat = 0;
+        for (size_t d = 0; d < ndim; ++d) {
+            if (!is_reduced[d]) {
+                out_flat = out_flat * shape[d] + idx[d];
+            }
+        }
+        o[out_flat] += inp[flat];
+    }
+
+    float inv = 1.0f / static_cast<float>(reduction_size);
+    for (int64_t i = 0; i < out_numel; ++i) o[i] *= inv;
+    return {};
+}
+
 // ── Half-precision helpers ──────────────────────────────────────────────
 
 static inline uint16_t float_to_half(float f) {

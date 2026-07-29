@@ -297,3 +297,30 @@ TEST_CASE("cpu::layernorm with affine parameters shifts output", "[backend][cpu]
     REQUIRE(out.data<float>()[1] == Catch::Approx(0.2f));
     REQUIRE(out.data<float>()[2] == Catch::Approx(0.3f));
 }
+
+// ── reduce_mean ─────────────────────────────────────────────────────────
+
+TEST_CASE("cpu::reduce_mean over single dim", "[backend][cpu]") {
+    Runtime rt;
+    auto input = Tensor::empty(rt, {2, 3});
+    float data[] = {1,2,3,4,5,6};
+    std::memcpy(input.data<float>(), data, 6 * sizeof(float));
+
+    auto out = Tensor::empty(rt, {2});
+    auto result = cpu::reduce_mean(out, input, {1});
+    REQUIRE(result);
+    REQUIRE(out.data<float>()[0] == Catch::Approx(2.0f));
+    REQUIRE(out.data<float>()[1] == Catch::Approx(5.0f));
+}
+
+TEST_CASE("cpu::reduce_mean over all dims", "[backend][cpu]") {
+    Runtime rt;
+    auto input = Tensor::empty(rt, {2, 3});
+    float data[] = {1,2,3,4,5,6};
+    std::memcpy(input.data<float>(), data, 6 * sizeof(float));
+
+    auto out = Tensor::empty(rt, {1});
+    auto result = cpu::reduce_mean(out, input, {0, 1});
+    REQUIRE(result);
+    REQUIRE(out.data<float>()[0] == Catch::Approx(3.5f));
+}

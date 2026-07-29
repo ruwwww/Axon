@@ -446,3 +446,56 @@ TEST_CASE("ReshapeOp backward reshapes gradient to original shape", "[autograd]"
     REQUIRE(grads.count(a.id()) > 0);
     REQUIRE(grads[a.id()].type().shape() == std::vector<int64_t>({2, 3}));
 }
+
+TEST_CASE("MeanOp forward reduces over single dim", "[operation]") {
+    Runtime rt;
+    auto x = Tensor::empty(rt, {2, 3});
+    float x_data[] = {1,2,3,4,5,6};
+    std::memcpy(x.data<float>(), x_data, 6 * sizeof(float));
+
+    auto result = rt.mean(x, {1});
+    REQUIRE(result);
+    REQUIRE(result.value().type().shape() == std::vector<int64_t>({2}));
+    REQUIRE(result.value().data<float>()[0] == Catch::Approx(2.0f));
+    REQUIRE(result.value().data<float>()[1] == Catch::Approx(5.0f));
+}
+
+TEST_CASE("MeanOp forward with keepdim preserves dimensions", "[operation]") {
+    Runtime rt;
+    auto x = Tensor::empty(rt, {2, 3});
+    x.set_requires_grad(true);
+
+    auto result = rt.mean(x, {1}, true);
+    REQUIRE(result);
+    REQUIRE(result.value().type().shape() == std::vector<int64_t>({2, 1}));
+}
+
+TEST_CASE("MeanOp forward records graph when requires_grad", "[operation]") {
+    Runtime rt;
+    auto x = Tensor::zeros(rt, {2, 3});
+    x.set_requires_grad(true);
+
+    REQUIRE(rt.autograd().graph().size() == 0);
+    rt.mean(x, {1});
+    REQUIRE(rt.autograd().graph().size() == 1);
+}
+
+TEST_CASE("MeanOp backward broadcasts gradient correctly", "[autograd]") {
+    Runtime rt;
+    auto a = Tensor::empty(rt, {2, 3});
+    auto b = Tensor::zeros(rt, {3, 4});
+    a.set_requires_grad(true);
+    b.set_requires_grad(true);
+
+    float a_data[] = {1,2,3,4,5,6};
+    std::memcpy(a.data<float>(), a_data, 6 * sizeof(float));
+
+    // y = mean(a @ b, dim=1) => reduce {2,4} -> {2}
+    Tensor ab = *rt.matmul(a, b);
+    Tensor y = *rt.mean(ab, {1});
+    rt.autograd().backward(rt, y);
+
+    auto& grads = rt.autograd().gradients();
+    REQUIRE(grads.count(a.id()) > 0);
+    REQUIRE(grads[a.id()].type().shape() == std::vector<int64_t>({2, 3}));
+}

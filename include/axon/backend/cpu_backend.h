@@ -37,6 +37,9 @@ Expected<void> quantize(Tensor& dst, const Tensor& src, QuantFormat format);
 Expected<void> dequantize(Tensor& dst, const Tensor& src);
 Expected<void> matmul_q4(Tensor& out, const Tensor& a, const Tensor& b);
 
+// Reductions
+Expected<void> reduce_mean(Tensor& out, const Tensor& input, const std::vector<int64_t>& dims);
+
 // Normalization
 Expected<void> batchnorm(Tensor& out, const Tensor& input,
                          const Tensor& gamma, const Tensor& beta,

@@ -1224,6 +1224,107 @@ Expected<void> ReshapeOp::backward(Runtime& rt, const GraphNode& node, GradientM
     return {};
 }
 
+// ── MeanOp ─────────────────────────────────────────────────────────────
+
+Expected<Tensor> MeanOp::forward(Runtime& rt, const Tensor& x, const std::vector<int64_t>& dims, bool keepdim) {
+    const auto& shape = x.type().shape();
+    auto ndim = shape.size();
+
+    std::vector<bool> is_reduced(ndim, false);
+    for (auto d : dims) {
+        if (d < 0 || static_cast<size_t>(d) >= ndim)
+            return Error{"MeanOp: dim out of range"};
+        is_reduced[d] = true;
+    }
+
+    std::vector<int64_t> out_shape;
+    for (size_t d = 0; d < ndim; ++d) {
+        if (is_reduced[d]) {
+            if (keepdim) out_shape.push_back(1);
+        } else {
+            out_shape.push_back(shape[d]);
+        }
+    }
+    if (out_shape.empty()) out_shape.push_back(1);
+
+    auto out_type = TensorType::contiguous(out_shape, x.type().dtype());
+    bool need_grad = x.requires_grad();
+    auto out = Tensor(out_type, rt.allocator().allocate(out_type), need_grad);
+
+    RETURN_IF_ERROR(cpu::reduce_mean(out, x, dims));
+
+    if (need_grad) {
+        GraphNode node;
+        node.op = OpType::Mean;
+        node.inputs = {x};
+        node.output = out;
+        node.runtime = &rt;
+        // Store dims and original shape in op_data for backward
+        int64_t n_meta = static_cast<int64_t>(ndim + dims.size() + 1);
+        auto meta_type = TensorType::contiguous({n_meta}, DType::Int64);
+        Tensor meta(meta_type, rt.allocator().allocate(meta_type), false);
+        auto* mp = meta.data<int64_t>();
+        mp[0] = static_cast<int64_t>(dims.size());
+        for (size_t i = 0; i < dims.size(); ++i) mp[1 + i] = dims[i];
+        for (size_t i = 0; i < ndim; ++i) mp[1 + dims.size() + i] = shape[i];
+        node.op_data = meta;
+        rt.autograd().graph().append(std::move(node));
+    }
+
+    return out;
+}
+
+Expected<void> MeanOp::backward(Runtime& rt, const GraphNode& node, GradientMap& grads) {
+    auto grad_it = grads.find(node.output.id());
+    if (grad_it == grads.end()) return {};
+    Tensor grad_out = grad_it->second;
+
+    auto* mp = node.op_data.data<const int64_t>();
+    int64_t n_dims = mp[0];
+    std::vector<int64_t> dims(mp + 1, mp + 1 + n_dims);
+    int64_t ndim = (node.op_data.type().numel() - 1 - n_dims);
+    std::vector<int64_t> orig_shape(mp + 1 + n_dims, mp + 1 + n_dims + ndim);
+
+    int64_t reduction_size = 1;
+    for (auto d : dims) reduction_size *= orig_shape[d];
+
+    const Tensor& input = node.inputs[0];
+    auto dx_type = TensorType::contiguous(orig_shape, input.type().dtype());
+    Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
+    auto* dx_ptr = dx.data<float>();
+    auto* go_ptr = grad_out.data<const float>();
+    auto numel = input.type().numel();
+
+    std::vector<bool> is_reduced(ndim, false);
+    for (auto d : dims) is_reduced[d] = true;
+
+    float inv = 1.0f / static_cast<float>(reduction_size);
+    std::vector<int64_t> idx(ndim, 0);
+    for (int64_t flat = 0; flat < numel; ++flat) {
+        int64_t tmp = flat;
+        for (int d = static_cast<int>(ndim) - 1; d >= 0; --d) {
+            idx[d] = tmp % orig_shape[d];
+            tmp /= orig_shape[d];
+        }
+        int64_t out_flat = 0;
+        for (int64_t d = 0; d < ndim; ++d) {
+            if (!is_reduced[d]) {
+                out_flat = out_flat * orig_shape[d] + idx[d];
+            }
+        }
+        dx_ptr[flat] = go_ptr[out_flat] * inv;
+    }
+
+    auto it = grads.find(input.id());
+    if (it != grads.end()) {
+        cpu::add(it->second, it->second, dx);
+    } else {
+        grads[input.id()] = dx;
+    }
+
+    return {};
+}
+
 // ── Autograd ──────────────────────────────────────────────────────────
 
 Expected<void> Autograd::backward(Runtime& runtime, const Tensor& loss) {
@@ -1287,6 +1388,10 @@ Expected<void> Autograd::backward(Runtime& runtime, const Tensor& loss) {
             }
             case OpType::Reshape: {
                 RETURN_IF_ERROR(ReshapeOp::backward(*node.runtime, node, grads_));
+                break;
+            }
+            case OpType::Mean: {
+                RETURN_IF_ERROR(MeanOp::backward(*node.runtime, node, grads_));
                 break;
             }
         }
