@@ -72,8 +72,8 @@ class Runtime {
     Autograd autograd_;
 public:
     Autograd& autograd() { return autograd_; }
-    Tensor matmul(const Tensor& a, const Tensor& b);
-    Tensor relu(const Tensor& x);
+    Expected<Tensor> matmul(const Tensor& a, const Tensor& b);
+    Expected<Tensor> relu(const Tensor& x);
 };
 ```
 

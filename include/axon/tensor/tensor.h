@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include <random>
+#include "axon/core/expected.h"
 #include "axon/storage/storage.h"
 #include "axon/tensor/tensor_type.h"
 
@@ -34,6 +35,10 @@ public:
 
     void set_requires_grad(bool val) { requires_grad_ = val; }
 
+    const Tensor& grad() const { return *grad_; }
+    bool has_grad() const { return grad_ != nullptr; }
+    void set_grad(const Tensor& g) { grad_ = std::make_shared<Tensor>(g); }
+
     bool defined() const { return storage_ != nullptr && storage_->data != nullptr; }
 
     template <typename T>
@@ -51,6 +56,7 @@ private:
     TensorType type_;
     StoragePtr storage_;
     bool requires_grad_ = false;
+    std::shared_ptr<Tensor> grad_;
 };
 
 } // namespace axon

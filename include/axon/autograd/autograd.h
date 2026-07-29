@@ -1,0 +1,63 @@
+#pragma once
+
+#include <cstdint>
+#include <unordered_map>
+#include <vector>
+#include "axon/core/expected.h"
+#include "axon/tensor/tensor.h"
+
+namespace axon {
+
+class Runtime;
+
+enum class OpType : uint8_t {
+    MatMul,
+    ReLU,
+};
+
+struct GraphNode {
+    OpType op;
+    std::vector<Tensor> inputs;
+    Tensor output;
+    Runtime* runtime;
+    Tensor op_data;
+};
+
+class Graph {
+public:
+    void append(GraphNode node);
+    size_t size() const;
+    const GraphNode& operator[](size_t i) const;
+    GraphNode& operator[](size_t i);
+
+private:
+    std::vector<GraphNode> nodes_;
+};
+
+using GradientMap = std::unordered_map<TensorId, Tensor>;
+
+struct MatMulOp {
+    static Expected<Tensor> forward(Runtime& rt, const Tensor& a, const Tensor& b);
+    static Expected<void> backward(Runtime& rt, const GraphNode& node, GradientMap& grads);
+};
+
+struct ReLUOp {
+    static Expected<Tensor> forward(Runtime& rt, const Tensor& x);
+    static Expected<void> backward(Runtime& rt, const GraphNode& node, GradientMap& grads);
+};
+
+class Autograd {
+public:
+    Graph& graph() { return graph_; }
+    const Graph& graph() const { return graph_; }
+    GradientMap& gradients() { return grads_; }
+    const GradientMap& gradients() const { return grads_; }
+    void clear_gradients() { grads_.clear(); }
+    Expected<void> backward(Runtime& runtime, const Tensor& loss);
+
+private:
+    Graph graph_;
+    GradientMap grads_;
+};
+
+} // namespace axon
