@@ -48,7 +48,7 @@ The framework is capable enough to train a ResNet-18 on CIFAR-10 and run quantiz
 ### Build
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/ruwwww/Axon
 cd Axon
 cmake -B build
 cmake --build build
