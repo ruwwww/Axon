@@ -396,3 +396,53 @@ TEST_CASE("Graph records nodes in order and iterates in reverse", "[autograd]") 
     REQUIRE(rt.autograd().graph()[0].op == OpType::MatMul);
     REQUIRE(rt.autograd().graph()[1].op == OpType::MatMul);
 }
+
+TEST_CASE("ReshapeOp forward changes shape without copying storage", "[operation]") {
+    Runtime rt;
+    auto x = Tensor::zeros(rt, {2, 3});
+    x.set_requires_grad(true);
+
+    auto result = rt.reshape(x, {3, 2});
+    REQUIRE(result);
+    REQUIRE(result.value().type().shape() == std::vector<int64_t>({3, 2}));
+    REQUIRE(result.value().storage().get() == x.storage().get());
+}
+
+TEST_CASE("ReshapeOp forward validates total element count", "[operation]") {
+    Runtime rt;
+    auto x = Tensor::zeros(rt, {2, 3});
+    auto result = rt.reshape(x, {2, 4});
+    REQUIRE_FALSE(result);
+}
+
+TEST_CASE("ReshapeOp forward records graph node when requires_grad", "[operation]") {
+    Runtime rt;
+    auto x = Tensor::zeros(rt, {2, 3});
+    x.set_requires_grad(true);
+
+    REQUIRE(rt.autograd().graph().size() == 0);
+    rt.reshape(x, {6});
+    REQUIRE(rt.autograd().graph().size() == 1);
+}
+
+TEST_CASE("ReshapeOp backward reshapes gradient to original shape", "[autograd]") {
+    Runtime rt;
+    auto a = Tensor::zeros(rt, {2, 3});
+    auto b = Tensor::zeros(rt, {3, 4});
+    a.set_requires_grad(true);
+    b.set_requires_grad(true);
+
+    float a_data[] = {1,2,3,4,5,6};
+    float b_data[] = {7,8,9,10,11,12,13,14,15,16,17,18};
+    std::memcpy(a.data<float>(), a_data, 6 * sizeof(float));
+    std::memcpy(b.data<float>(), b_data, 12 * sizeof(float));
+
+    Tensor ab = *rt.matmul(a, b);             // {2, 4}
+    Tensor flat = *rt.reshape(ab, {8});        // {8}
+    Tensor y = *rt.relu(flat);                  // {8}
+    rt.autograd().backward(rt, y);
+
+    auto& grads = rt.autograd().gradients();
+    REQUIRE(grads.count(a.id()) > 0);
+    REQUIRE(grads[a.id()].type().shape() == std::vector<int64_t>({2, 3}));
+}

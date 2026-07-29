@@ -31,6 +31,10 @@ Expected<Tensor> Runtime::gelu(const Tensor& x) {
     return GELUOp::forward(*this, x);
 }
 
+Expected<Tensor> Runtime::reshape(const Tensor& x, const std::vector<int64_t>& new_shape) {
+    return ReshapeOp::forward(*this, x, new_shape);
+}
+
 Expected<Tensor> Runtime::add(const Tensor& a, const Tensor& b) {
     return AddOp::forward(*this, a, b);
 }

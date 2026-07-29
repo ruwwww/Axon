@@ -3,6 +3,7 @@
 #include "axon/nn/cross_entropy.h"
 #include "axon/nn/mse.h"
 #include "axon/runtime/runtime.h"
+#include <cstring>
 #include <cmath>
 #include <limits>
 
@@ -1159,6 +1160,70 @@ Expected<void> GELUOp::backward(Runtime& rt, const GraphNode& node, GradientMap&
     return {};
 }
 
+// ── ReshapeOp ─────────────────────────────────────────────────────────
+
+Expected<Tensor> ReshapeOp::forward(Runtime& rt, const Tensor& x, const std::vector<int64_t>& new_shape) {
+    int64_t new_numel = 1;
+    for (auto s : new_shape) new_numel *= s;
+    if (new_numel != x.type().numel()) {
+        return Error{"ReshapeOp: new shape has different number of elements"};
+    }
+
+    auto new_type = TensorType::contiguous(new_shape, x.type().dtype());
+    bool need_grad = x.requires_grad();
+    auto out = Tensor(new_type, x.storage(), need_grad);
+
+    if (need_grad) {
+        GraphNode node;
+        node.op = OpType::Reshape;
+        node.inputs = {x};
+        node.output = out;
+        node.runtime = &rt;
+        // Store original shape in op_data for backward
+        auto orig_shape = x.type().shape();
+        auto meta_type = TensorType::contiguous({static_cast<int64_t>(orig_shape.size())}, DType::Int64);
+        Tensor meta(meta_type, rt.allocator().allocate(meta_type), false);
+        for (size_t i = 0; i < orig_shape.size(); ++i) {
+            meta.data<int64_t>()[i] = orig_shape[i];
+        }
+        node.op_data = meta;
+        rt.autograd().graph().append(std::move(node));
+    }
+
+    return out;
+}
+
+Expected<void> ReshapeOp::backward(Runtime& rt, const GraphNode& node, GradientMap& grads) {
+    auto grad_it = grads.find(node.output.id());
+    if (grad_it == grads.end()) {
+        return {};
+    }
+    Tensor grad_out = grad_it->second;
+
+    // Original shape stored in op_data
+    auto* shape_ptr = node.op_data.data<const int64_t>();
+    auto ndim = node.op_data.type().numel();
+    std::vector<int64_t> orig_shape(shape_ptr, shape_ptr + ndim);
+
+    // Gradient is reshaped back to original input shape
+    auto grad_type = TensorType::contiguous(orig_shape, grad_out.type().dtype());
+    Tensor grad(grad_type, rt.allocator().allocate(grad_type), false);
+
+    // Copy elements (reshape is just a view, but for gradient we allocate new storage)
+    std::memcpy(grad.data<float>(), grad_out.data<const float>(),
+                static_cast<size_t>(grad_out.type().numel()) * sizeof(float));
+
+    const Tensor& input = node.inputs[0];
+    auto it = grads.find(input.id());
+    if (it != grads.end()) {
+        cpu::add(it->second, it->second, grad);
+    } else {
+        grads[input.id()] = grad;
+    }
+
+    return {};
+}
+
 // ── Autograd ──────────────────────────────────────────────────────────
 
 Expected<void> Autograd::backward(Runtime& runtime, const Tensor& loss) {
@@ -1218,6 +1283,10 @@ Expected<void> Autograd::backward(Runtime& runtime, const Tensor& loss) {
             }
             case OpType::GELU: {
                 RETURN_IF_ERROR(GELUOp::backward(*node.runtime, node, grads_));
+                break;
+            }
+            case OpType::Reshape: {
+                RETURN_IF_ERROR(ReshapeOp::backward(*node.runtime, node, grads_));
                 break;
             }
         }
