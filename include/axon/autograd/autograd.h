@@ -24,6 +24,7 @@ enum class OpType : uint8_t {
     GELU,
     Reshape,
     Mean,
+    L1Loss,
 };
 
 struct GraphNode {

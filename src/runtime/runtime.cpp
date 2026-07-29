@@ -1,5 +1,6 @@
 #include "axon/runtime/runtime.h"
 #include "axon/autograd/autograd.h"
+#include "axon/nn/l1_loss.h"
 
 namespace axon {
 
@@ -37,6 +38,10 @@ Expected<Tensor> Runtime::reshape(const Tensor& x, const std::vector<int64_t>& n
 
 Expected<Tensor> Runtime::mean(const Tensor& x, const std::vector<int64_t>& dims, bool keepdim) {
     return MeanOp::forward(*this, x, dims, keepdim);
+}
+
+Expected<Tensor> Runtime::l1_loss(const Tensor& pred, const Tensor& target) {
+    return L1LossOp::forward(*this, pred, target);
 }
 
 Expected<Tensor> Runtime::add(const Tensor& a, const Tensor& b) {

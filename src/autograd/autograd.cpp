@@ -2,6 +2,7 @@
 #include "axon/backend/cpu_backend.h"
 #include "axon/nn/cross_entropy.h"
 #include "axon/nn/mse.h"
+#include "axon/nn/l1_loss.h"
 #include "axon/runtime/runtime.h"
 #include <cstring>
 #include <cmath>
@@ -417,6 +418,72 @@ Expected<void> MSELossOp::backward(Runtime& rt, const GraphNode& node, GradientM
 
     for (int64_t i = 0; i < n; ++i) {
         dp_ptr[i] = (p_ptr[i] - t_ptr[i]) * inv_N;
+    }
+
+    auto it = grads.find(pred.id());
+    if (it != grads.end()) {
+        cpu::add(it->second, it->second, dp);
+    } else {
+        grads[pred.id()] = dp;
+    }
+
+    return {};
+}
+
+// ── L1LossOp ──────────────────────────────────────────────────────────
+
+Expected<Tensor> L1LossOp::forward(Runtime& rt, const Tensor& pred, const Tensor& target) {
+    if (pred.type().shape() != target.type().shape()) {
+        return Error{"L1LossOp: shape mismatch between pred and target"};
+    }
+
+    auto loss_type = TensorType::contiguous({1}, pred.type().dtype());
+    bool need_grad = pred.requires_grad();
+    auto loss = Tensor(loss_type, rt.allocator().allocate(loss_type), need_grad);
+
+    auto* p_ptr = pred.data<const float>();
+    auto* t_ptr = target.data<const float>();
+    auto n = pred.type().numel();
+
+    float sum = 0.0f;
+    for (int64_t i = 0; i < n; ++i) {
+        sum += std::abs(p_ptr[i] - t_ptr[i]);
+    }
+    loss.data<float>()[0] = sum / static_cast<float>(n);
+
+    if (need_grad) {
+        GraphNode node;
+        node.op = OpType::L1Loss;
+        node.inputs = {pred, target};
+        node.output = loss;
+        node.runtime = &rt;
+        rt.autograd().graph().append(std::move(node));
+    }
+
+    return loss;
+}
+
+Expected<void> L1LossOp::backward(Runtime& rt, const GraphNode& node, GradientMap& grads) {
+    const Tensor& pred = node.inputs[0];
+    const Tensor& target = node.inputs[1];
+
+    auto grad_it = grads.find(node.output.id());
+    if (grad_it == grads.end()) {
+        return {};
+    }
+
+    auto n = pred.type().numel();
+    float inv_N = 1.0f / static_cast<float>(n);
+
+    auto dp_type = TensorType::contiguous(pred.type().shape(), pred.type().dtype());
+    Tensor dp(dp_type, rt.allocator().allocate(dp_type), false);
+    auto* dp_ptr = dp.data<float>();
+    auto* p_ptr = pred.data<const float>();
+    auto* t_ptr = target.data<const float>();
+
+    for (int64_t i = 0; i < n; ++i) {
+        float diff = p_ptr[i] - t_ptr[i];
+        dp_ptr[i] = (diff > 0.0f ? 1.0f : (diff < 0.0f ? -1.0f : 0.0f)) * inv_N;
     }
 
     auto it = grads.find(pred.id());
@@ -1392,6 +1459,10 @@ Expected<void> Autograd::backward(Runtime& runtime, const Tensor& loss) {
             }
             case OpType::Mean: {
                 RETURN_IF_ERROR(MeanOp::backward(*node.runtime, node, grads_));
+                break;
+            }
+            case OpType::L1Loss: {
+                RETURN_IF_ERROR(L1LossOp::backward(*node.runtime, node, grads_));
                 break;
             }
         }

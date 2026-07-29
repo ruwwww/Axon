@@ -26,6 +26,7 @@ public:
     Expected<Tensor> reshape(const Tensor& x, const std::vector<int64_t>& new_shape);
     Expected<Tensor> mean(const Tensor& x, const std::vector<int64_t>& dims, bool keepdim = false);
     Expected<Tensor> add(const Tensor& a, const Tensor& b);
+    Expected<Tensor> l1_loss(const Tensor& pred, const Tensor& target);
     Expected<Tensor> conv2d(const Tensor& input, const Tensor& weight, const Tensor& bias,
                             int64_t stride = 1, int64_t padding = 0);
     Expected<Tensor> maxpool2d(const Tensor& input, int64_t kernel, int64_t stride);
