@@ -318,8 +318,8 @@ Expected<void> batchnorm(Tensor& out, const Tensor& input,
     auto* inp = input.data<const float>();
     auto* g = gamma.data<const float>();
     auto* b = beta.data<const float>();
-    auto* rm = running_mean.data<const float>();
-    auto* rv = running_var.data<const float>();
+    auto* rm = running_mean.data<float>();
+    auto* rv = running_var.data<float>();
     auto* o = out.data<float>();
 
     if (training) {
@@ -361,14 +361,10 @@ Expected<void> batchnorm(Tensor& out, const Tensor& input,
             }
         }
 
-        // Update running stats (in-place, mutable through non-const pointers)
-        // We need to cast away constness since Tensor::data returns const T*
-        // but running_mean/var need updating
-        auto* rm_mut = const_cast<float*>(rm);
-        auto* rv_mut = const_cast<float*>(rv);
+        // Update running stats
         for (int64_t c = 0; c < C; ++c) {
-            rm_mut[c] = momentum * rm_mut[c] + (1.0f - momentum) * mean[c];
-            rv_mut[c] = momentum * rv_mut[c] + (1.0f - momentum) * var[c];
+            rm[c] = momentum * rm[c] + (1.0f - momentum) * mean[c];
+            rv[c] = momentum * rv[c] + (1.0f - momentum) * var[c];
         }
     } else {
         for (int64_t n = 0; n < N; ++n) {
