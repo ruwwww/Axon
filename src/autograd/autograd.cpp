@@ -1238,7 +1238,7 @@ Expected<Tensor> ReshapeOp::forward(Runtime& rt, const Tensor& x, const std::vec
 
     auto new_type = TensorType::contiguous(new_shape, x.type().dtype());
     bool need_grad = x.requires_grad();
-    auto out = Tensor(new_type, x.storage(), need_grad);
+    auto out = Tensor(new_type, x.storage(), need_grad, x.storage_offset());
 
     if (need_grad) {
         GraphNode node;
@@ -1409,7 +1409,7 @@ Expected<Tensor> TransposeOp::forward(Runtime& rt, const Tensor& x, int64_t dim1
 
     TensorType out_type(swapped_shape, swapped_strides, x.type().dtype());
     bool need_grad = x.requires_grad();
-    auto out = Tensor(out_type, x.storage(), need_grad);
+    auto out = Tensor(out_type, x.storage(), need_grad, x.storage_offset());
 
     if (need_grad) {
         GraphNode node;

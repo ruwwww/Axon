@@ -17,11 +17,12 @@ class Tensor {
 public:
     Tensor() = default;
 
-    Tensor(TensorType type, StoragePtr storage, bool requires_grad = false)
+    Tensor(TensorType type, StoragePtr storage, bool requires_grad = false, int64_t storage_offset = 0)
         : id_(next_id())
         , type_(std::move(type))
         , storage_(std::move(storage))
-        , requires_grad_(requires_grad) {}
+        , requires_grad_(requires_grad)
+        , storage_offset_(storage_offset) {}
 
     static Tensor empty(Runtime& rt, const std::vector<int64_t>& shape, DType dtype = DType::Float32);
     static Tensor zeros(Runtime& rt, const std::vector<int64_t>& shape, DType dtype = DType::Float32);
@@ -35,6 +36,8 @@ public:
 
     void set_requires_grad(bool val) { requires_grad_ = val; }
 
+    int64_t storage_offset() const { return storage_offset_; }
+
     const Tensor& grad() const { return *grad_; }
     bool has_grad() const { return grad_ != nullptr; }
     void set_grad(const Tensor& g) { grad_ = std::make_shared<Tensor>(g); }
@@ -43,7 +46,7 @@ public:
 
     template <typename T>
     T* data() const {
-        return static_cast<T*>(storage_->data);
+        return static_cast<T*>(storage_->data) + storage_offset_;
     }
 
 private:
@@ -55,6 +58,7 @@ private:
     TensorId id_ = 0;
     TensorType type_;
     StoragePtr storage_;
+    int64_t storage_offset_ = 0;
     bool requires_grad_ = false;
     std::shared_ptr<Tensor> grad_;
 };

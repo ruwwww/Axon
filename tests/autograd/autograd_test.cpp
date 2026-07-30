@@ -644,6 +644,90 @@ TEST_CASE("TransposeOp forward with dim1 == dim2 is no-op", "[operation]") {
     REQUIRE(result.value().type().strides() == std::vector<int64_t>({3, 1}));
 }
 
+TEST_CASE("TransposeOp forward propagates storage_offset unchanged", "[operation][offset]") {
+    Runtime rt;
+    auto x = Tensor::zeros(rt, {2, 3});
+    REQUIRE(x.storage_offset() == 0);
+
+    auto result = rt.transpose(x, 0, 1);
+    REQUIRE(result);
+    REQUIRE(result.value().storage_offset() == x.storage_offset());
+}
+
+TEST_CASE("TransposeOp forward data<T>() returns same address as original on view", "[operation][offset]") {
+    Runtime rt;
+    auto storage = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto* raw = static_cast<float*>(storage->data);
+    for (int i = 0; i < 6; ++i) raw[i] = static_cast<float>(i + 1);
+
+    TensorType orig_type({2, 3}, {3, 1}, DType::Float32);
+    Tensor x(orig_type, storage, false, 0);
+
+    auto result = rt.transpose(x, 0, 1);
+    REQUIRE(result);
+    REQUIRE(result.value().storage().get() == storage.get());
+    REQUIRE(result.value().storage_offset() == 0);
+    // data<T>() returns same pointer (same offset into shared storage)
+    REQUIRE(result.value().data<float>() == x.data<float>());
+}
+
+TEST_CASE("TransposeOp forward with non-zero storage_offset keeps data pointer correct", "[operation][offset]") {
+    Runtime rt;
+    // Create underlying storage with 8 elements
+    auto storage = rt.allocator().allocate(TensorType::contiguous({8}, DType::Float32));
+    auto* raw = static_cast<float*>(storage->data);
+    for (int i = 0; i < 8; ++i) raw[i] = static_cast<float>(i + 100);
+
+    // Create a tensor with offset 2, shape {2,3}, contiguous strides {3,1}
+    // pointing at elements [2..7] of storage: {102, 103, 104, 105, 106, 107}
+    TensorType x_type({2, 3}, {3, 1}, DType::Float32);
+    Tensor x(x_type, storage, false, 2);
+
+    REQUIRE(x.storage_offset() == 2);
+    REQUIRE(x.data<float>()[0] == Catch::Approx(102.0f));
+    REQUIRE(x.data<float>()[5] == Catch::Approx(107.0f));
+
+    // Transpose
+    auto result = rt.transpose(x, 0, 1);
+    REQUIRE(result);
+    // Should share storage, same offset
+    REQUIRE(result.value().storage().get() == storage.get());
+    REQUIRE(result.value().storage_offset() == 2);
+    // data<T>() should return same pointer as x.data() (same offset)
+    REQUIRE(result.value().data<float>() == x.data<float>());
+}
+
+TEST_CASE("ReshapeOp forward propagates storage_offset unchanged", "[operation][offset]") {
+    Runtime rt;
+    auto x = Tensor::zeros(rt, {2, 3});
+    REQUIRE(x.storage_offset() == 0);
+
+    auto result = rt.reshape(x, {3, 2});
+    REQUIRE(result);
+    REQUIRE(result.value().storage_offset() == x.storage_offset());
+}
+
+TEST_CASE("ReshapeOp forward with non-zero storage_offset", "[operation][offset]") {
+    Runtime rt;
+    auto storage = rt.allocator().allocate(TensorType::contiguous({12}, DType::Float32));
+    auto* raw = static_cast<float*>(storage->data);
+    for (int i = 0; i < 12; ++i) raw[i] = static_cast<float>(i + 1);
+
+    // Create a tensor with offset 2, shape {2,5} — but {2,5}=10 elems, + offset 2 = 12, fits in storage
+    TensorType x_type({2, 5}, {5, 1}, DType::Float32);
+    Tensor x(x_type, storage, false, 2);
+
+    REQUIRE(x.storage_offset() == 2);
+
+    // Reshape to {5,2}
+    auto result = rt.reshape(x, {5, 2});
+    REQUIRE(result);
+    REQUIRE(result.value().storage().get() == storage.get());
+    REQUIRE(result.value().storage_offset() == 2);
+    // data<T>() should return same pointer
+    REQUIRE(result.value().data<float>() == x.data<float>());
+}
+
 TEST_CASE("MeanOp forward reduces over single dim", "[operation]") {
     Runtime rt;
     auto x = Tensor::empty(rt, {2, 3});
