@@ -544,12 +544,8 @@ TEST_CASE("TransposeOp backward values are correct (transpose of grad output)", 
 
     auto& grads = rt.autograd().gradients();
 
-    // dy = ones({2,2}), dx = dy @ W^T
-    // Since y = x @ W, dy = I (all ones from sum(z) where z = y^T)
-    // Wait: loss = sum(z) where z = y^T means loss = sum(y^T) = sum(y)
-    // So d(loss)/d(y) = ones({2,2})
-    // dx = ones @ W^T = W^T summed along rows
-    // For element (i,j): dx[i,j] = sum_k ones[i,k] * W[j,k] = sum_k W[j,k]
+    // Since loss = sum(y^T) = sum(y), d(loss)/d(y) is all ones.
+    // Therefore dx = ones({2,2}) @ W^T.
     Tensor grad_x = grads[x.id()];
     REQUIRE(grad_x.type().shape() == std::vector<int64_t>({2, 3}));
     // grad_x[i,j] = W[j,0] + W[j,1] for each i (since dy is all ones)
