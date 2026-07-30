@@ -52,12 +52,12 @@ Introduce a `TensorIterator` abstraction in `include/axon/tensor/tensor_iterator
 
 ### Remaining
 
-- [ ] Fix `const TensorIterator<float>` → `TensorIterator<const float>` in CPU backend for compile-time write protection on read-only inputs
-- [ ] Remove dead variable `go_view_type` from autograd_test.cpp
-- [ ] Remove scratch-work debugging comments from autograd_test.cpp
-- [ ] Restore `std::fill` in reduce_mean (manual loop replaced idiomatic C++)
-- [ ] Add `*_iter` overloads for hot-path callers (private detail extracted from each kernel)
-- [ ] Migrate loss forward passes to TensorIterator (CrossEntropyLossOp, MSELossOp, L1LossOp)
+- _done_ Fix `const TensorIterator<float>` → `TensorIterator<const float>` in CPU backend for compile-time write protection on read-only inputs (141e900)
+- _done_ Remove dead variable `go_view_type` from autograd_test.cpp (141e900)
+- _done_ Remove scratch-work debugging comments from autograd_test.cpp (141e900)
+- _done_ Restore `std::fill` in reduce_mean (manual loop replaced idiomatic C++) (141e900)
+- _skipped_ Add `*_iter` overloads for hot-path callers — no hot-path callers exist yet; can extract when one emerges
+- _done_ Migrate loss forward passes to TensorIterator (CrossEntropyLossOp, MSELossOp, L1LossOp) (141e900)
 
 ## Out of Scope
 

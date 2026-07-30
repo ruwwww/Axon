@@ -541,28 +541,110 @@ struct block_q4_0 {
     uint8_t qs[16];
 };
 
+// K-quant block structures (256-element blocks, GGML-compatible layout)
+
+#pragma pack(push, 1)
+struct block_q2_K {
+    uint16_t d;
+    uint16_t dmin;
+    uint8_t scales[16];
+    uint8_t qs[64];
+};
+
+struct block_q3_K {
+    uint8_t hmask[32];
+    uint8_t qs[64];
+    uint8_t scales[12];
+    uint16_t d;
+};
+
+struct block_q4_K {
+    uint16_t d;
+    uint16_t dmin;
+    uint8_t scales[12];
+    uint8_t qs[128];
+};
+
+struct block_q5_K {
+    uint16_t d;
+    uint16_t dmin;
+    uint8_t scales[12];
+    uint8_t qh[32];
+    uint8_t qs[128];
+};
+
+struct block_q6_K {
+    uint8_t ql[128];
+    uint8_t qh[64];
+    int8_t scales[16];
+    uint16_t d;
+};
+#pragma pack(pop)
+
+static_assert(sizeof(block_q2_K) == 84, "block_q2_K must be 84 bytes");
+static_assert(sizeof(block_q3_K) == 110, "block_q3_K must be 110 bytes");
+static_assert(sizeof(block_q4_K) == 144, "block_q4_K must be 144 bytes");
+static_assert(sizeof(block_q5_K) == 176, "block_q5_K must be 176 bytes");
+static_assert(sizeof(block_q6_K) == 210, "block_q6_K must be 210 bytes");
+
+// Shared helper: decode 6-bit scale/min from 12-byte K-quant scales array (GGML get_scale_min_k4)
+static inline void get_scale_min_k4(int j, const uint8_t* q, uint8_t* d, uint8_t* m) {
+    if (j < 4) {
+        *d = q[j] & 63;
+        *m = q[j + 4] & 63;
+    } else {
+        *d = (q[j + 4] & 0xF) | ((q[j - 4] >> 6) << 4);
+        *m = (q[j + 4] >> 4) | ((q[j] >> 6) << 4);
+    }
+}
+
 // ── Quantized size ─────────────────────────────────────────────────────
 
 size_t quantized_size(size_t num_elements, QuantFormat format) {
-    size_t num_blocks = (num_elements + 31) / 32;
+    size_t num_blocks_32 = (num_elements + 31) / 32;
+    size_t num_blocks_256 = (num_elements + 255) / 256;
     switch (format) {
-        case QuantFormat::Q8_0: return num_blocks * sizeof(block_q8_0);
-        case QuantFormat::Q4_0: return num_blocks * sizeof(block_q4_0);
+        case QuantFormat::Q8_0: return num_blocks_32 * sizeof(block_q8_0);
+        case QuantFormat::Q4_0: return num_blocks_32 * sizeof(block_q4_0);
+        case QuantFormat::Q2_K: return num_blocks_256 * sizeof(block_q2_K);
+        case QuantFormat::Q3_K: return num_blocks_256 * sizeof(block_q3_K);
+        case QuantFormat::Q4_K: return num_blocks_256 * sizeof(block_q4_K);
+        case QuantFormat::Q5_K: return num_blocks_256 * sizeof(block_q5_K);
+        case QuantFormat::Q6_K: return num_blocks_256 * sizeof(block_q6_K);
         default: return 0;
     }
 }
 
 size_t quantized_size_2d(int64_t M, int64_t K, QuantFormat format) {
-    size_t blocks_per_row = (static_cast<size_t>(K) + 31) / 32;
-    size_t total_blocks = static_cast<size_t>(M) * blocks_per_row;
     switch (format) {
-        case QuantFormat::Q8_0: return total_blocks * sizeof(block_q8_0);
-        case QuantFormat::Q4_0: return total_blocks * sizeof(block_q4_0);
+        case QuantFormat::Q8_0:
+        case QuantFormat::Q4_0: {
+            size_t blocks_per_row = (static_cast<size_t>(K) + 31) / 32;
+            size_t total_blocks = static_cast<size_t>(M) * blocks_per_row;
+            if (format == QuantFormat::Q8_0) return total_blocks * sizeof(block_q8_0);
+            return total_blocks * sizeof(block_q4_0);
+        }
+        case QuantFormat::Q2_K:
+        case QuantFormat::Q3_K:
+        case QuantFormat::Q4_K:
+        case QuantFormat::Q5_K:
+        case QuantFormat::Q6_K: {
+            size_t blocks_per_row = (static_cast<size_t>(K) + 255) / 256;
+            size_t total_blocks = static_cast<size_t>(M) * blocks_per_row;
+            switch (format) {
+                case QuantFormat::Q2_K: return total_blocks * sizeof(block_q2_K);
+                case QuantFormat::Q3_K: return total_blocks * sizeof(block_q3_K);
+                case QuantFormat::Q4_K: return total_blocks * sizeof(block_q4_K);
+                case QuantFormat::Q5_K: return total_blocks * sizeof(block_q5_K);
+                case QuantFormat::Q6_K: return total_blocks * sizeof(block_q6_K);
+                default: return 0;
+            }
+        }
         default: return 0;
     }
 }
 
-// ── Quantize ───────────────────────────────────────────────────────────
+// ── Quantize helpers ───────────────────────────────────────────────────
 
 static void quantize_block_q8_0(block_q8_0& block, const float* src, int count) {
     float amax = 0.0f;
@@ -600,16 +682,406 @@ static void quantize_block_q4_0(block_q4_0& block, const float* src, int count) 
     }
 }
 
+static void quantize_block_q2_K(block_q2_K& block, const float* src, int count) {
+    int n_sub = 16;
+    int sub_size = 16;
+    float max_scale = 0.0f, max_min = 0.0f;
+    float sub_scales[16], sub_mins[16];
+
+    for (int j = 0; j < n_sub; ++j) {
+        if (j * sub_size >= count) {
+            sub_scales[j] = 0.0f;
+            sub_mins[j] = 0.0f;
+            continue;
+        }
+        float sub_min = src[j * sub_size];
+        float sub_max = src[j * sub_size];
+        for (int i = 1; i < sub_size && j * sub_size + i < count; ++i) {
+            float v = src[j * sub_size + i];
+            if (v < sub_min) sub_min = v;
+            if (v > sub_max) sub_max = v;
+        }
+        float range = sub_max - sub_min;
+        if (range < 1e-10f) range = 1.0f;
+        sub_scales[j] = range / 3.0f;
+        float clamped_min = (sub_min < 0) ? sub_min : 0;
+        sub_mins[j] = -clamped_min;
+        if (sub_scales[j] > max_scale) max_scale = sub_scales[j];
+        if (sub_mins[j] > max_min) max_min = sub_mins[j];
+    }
+
+    // Quantize sub-block scales and mins to 4 bits
+    float iscale_d = (max_scale > 0.0f) ? 15.0f / max_scale : 0.0f;
+    float iscale_m = (max_min > 0.0f) ? 15.0f / max_min : 0.0f;
+    block.d = float_to_half(max_scale / 15.0f);
+    block.dmin = float_to_half(max_min / 15.0f);
+
+    for (int j = 0; j < n_sub; ++j) {
+        int qs = std::min(15, std::max(0, static_cast<int>(std::round(sub_scales[j] * iscale_d))));
+        int qm = std::min(15, std::max(0, static_cast<int>(std::round(sub_mins[j] * iscale_m))));
+        block.scales[j] = static_cast<uint8_t>(qs | (qm << 4));
+    }
+
+    // Re-quantize elements with actual scale/min
+    uint8_t L[256];
+    float d_vals[16], m_vals[16];
+    float d_super = half_to_float(block.d);
+    float m_super = half_to_float(block.dmin);
+    for (int j = 0; j < n_sub; ++j) {
+        d_vals[j] = d_super * (block.scales[j] & 0xF);
+        m_vals[j] = m_super * (block.scales[j] >> 4);
+    }
+    for (int j = 0; j < n_sub; ++j) {
+        for (int i = 0; i < sub_size && j * sub_size + i < count; ++i) {
+            float val = src[j * sub_size + i];
+            int l = static_cast<int>(std::round((val + m_vals[j]) / d_vals[j]));
+            l = std::max(0, std::min(3, l));
+            L[j * sub_size + i] = static_cast<uint8_t>(l);
+        }
+        for (int i = std::max(0, count - j * sub_size); i < sub_size; ++i) {
+            L[j * sub_size + i] = 0;
+        }
+    }
+
+    // Pack 4 × 2-bit values per byte, 128 elements at a time (GGML batch layout)
+    memset(block.qs, 0, 64);
+    for (int n = 0; n < 256; n += 128) {
+        for (int l = 0; l < 32; ++l) {
+            int v0 = (n + l < count) ? (L[n + l] & 3) : 0;
+            int v1 = (n + l + 32 < count) ? ((L[n + l + 32] & 3) << 2) : 0;
+            int v2 = (n + l + 64 < count) ? ((L[n + l + 64] & 3) << 4) : 0;
+            int v3 = (n + l + 96 < count) ? ((L[n + l + 96] & 3) << 6) : 0;
+            block.qs[n / 4 + l] = static_cast<uint8_t>(v0 | v1 | v2 | v3);
+        }
+    }
+}
+
+static void quantize_block_q3_K(block_q3_K& block, const float* src, int count) {
+    int n_sub = 16;
+    int sub_size = 16;
+    float max_abs_scale = 0.0f;
+    float sub_scales[16];
+
+    // Per sub-block: compute max absolute value and scale
+    for (int j = 0; j < n_sub; ++j) {
+        float amax = 0.0f;
+        for (int i = 0; i < sub_size && j * sub_size + i < count; ++i) {
+            amax = std::max(amax, std::abs(src[j * sub_size + i]));
+        }
+        sub_scales[j] = (amax < 1e-10f) ? 0.0f : (amax / 4.0f);
+        float abs_s = std::abs(sub_scales[j]);
+        if (abs_s > max_abs_scale) max_abs_scale = abs_s;
+    }
+
+    // Quantize scales to 6-bit (0..63), centered at 32
+    memset(block.scales, 0, 12);
+    if (max_abs_scale > 0.0f) {
+        float iscale = -32.0f / max_abs_scale;
+        for (int j = 0; j < n_sub; ++j) {
+            int l = static_cast<int>(std::round(iscale * sub_scales[j]));
+            l = std::max(-32, std::min(31, l)) + 32; // 0..63
+            // Pack into the 12-byte Q3_K scales format
+            if (j < 8) {
+                block.scales[j] = l & 0xF;
+            } else {
+                block.scales[j - 8] |= ((l & 0xF) << 4);
+            }
+            l >>= 4;
+            block.scales[j % 4 + 8] |= (l << (2 * (j / 4)));
+        }
+        block.d = float_to_half(1.0f / iscale);
+    } else {
+        block.d = float_to_half(0.0f);
+    }
+
+    // Quantize elements to -4..3
+    int8_t L[256];
+    float d_all = half_to_float(block.d);
+    for (int j = 0; j < n_sub; ++j) {
+        int sc;
+        if (j < 8) sc = block.scales[j] & 0xF;
+        else sc = block.scales[j - 8] >> 4;
+        sc = (sc | (((block.scales[8 + j % 4] >> (2 * (j / 4))) & 3) << 4)) - 32;
+        float d_sub = d_all * static_cast<float>(sc);
+        if (std::abs(d_sub) < 1e-10f) d_sub = 1.0f;
+        for (int i = 0; i < sub_size && j * sub_size + i < count; ++i) {
+            int l = static_cast<int>(std::round(src[j * sub_size + i] / d_sub));
+            l = std::max(-4, std::min(3, l));
+            L[j * sub_size + i] = static_cast<int8_t>(l);
+        }
+        for (int i = std::max(0, count - j * sub_size); i < sub_size; ++i) {
+            L[j * sub_size + i] = 0;
+        }
+    }
+
+    // Pack: low 2 bits in qs, high bit in hmask
+    // hmask: 32 bytes, each byte holds 8 bits (one per 32-element block)
+    memset(block.hmask, 0, 32);
+    memset(block.qs, 0, 64);
+    int m_idx = 0;
+    uint8_t hm = 1;
+    for (int j = 0; j < 256 && j < count; ++j) {
+        int v = L[j] + 4; // shift to 0..7
+        if (v > 3) {
+            block.hmask[m_idx] |= hm;
+            v -= 4;
+        }
+        if (++m_idx == 32) { m_idx = 0; hm <<= 1; }
+    }
+    // qs: 4 × 2-bit values per byte, GGML batch layout
+    for (int n = 0; n < 256; n += 128) {
+        for (int l = 0; l < 32; ++l) {
+            block.qs[n / 4 + l] = static_cast<uint8_t>(
+                (L[n + l] & 3) |
+                ((L[n + l + 32] & 3) << 2) |
+                ((L[n + l + 64] & 3) << 4) |
+                ((L[n + l + 96] & 3) << 6)
+            );
+        }
+    }
+}
+
+static void quantize_block_q4_K(block_q4_K& block, const float* src, int count) {
+    int n_groups = 8;
+    int group_size = 32;
+    float max_scale = 0.0f, max_min = 0.0f;
+    float scales[8], mins[8];
+
+    for (int j = 0; j < n_groups; ++j) {
+        if (j * group_size >= count) {
+            scales[j] = 0.0f;
+            mins[j] = 0.0f;
+            continue;
+        }
+        float g_min = src[j * group_size], g_max = src[j * group_size];
+        for (int i = 1; i < group_size && j * group_size + i < count; ++i) {
+            float v = src[j * group_size + i];
+            if (v < g_min) g_min = v;
+            if (v > g_max) g_max = v;
+        }
+        float range = g_max - g_min;
+        if (range < 1e-10f) range = 1.0f;
+        scales[j] = range / 15.0f;
+        float clamped_min = (g_min < 0) ? g_min : 0;
+        mins[j] = -clamped_min;
+        if (scales[j] > max_scale) max_scale = scales[j];
+        if (mins[j] > max_min) max_min = mins[j];
+    }
+
+    // Quantize scales and mins to 6 bits
+    float iscale = (max_scale > 0.0f) ? 63.0f / max_scale : 0.0f;
+    float iscale_m = (max_min > 0.0f) ? 63.0f / max_min : 0.0f;
+    block.d = float_to_half(max_scale / 63.0f);
+    block.dmin = float_to_half(max_min / 63.0f);
+
+    // Pack into 12-byte format (GGML get_scale_min_k4 compatible)
+    memset(block.scales, 0, 12);
+    for (int j = 0; j < n_groups; ++j) {
+        uint8_t ls = std::min(63, std::max(0, static_cast<int>(std::round(scales[j] * iscale))));
+        uint8_t lm = std::min(63, std::max(0, static_cast<int>(std::round(mins[j] * iscale_m))));
+        if (j < 4) {
+            block.scales[j] = ls;
+            block.scales[j + 4] = lm;
+        } else {
+            block.scales[j + 4] = (ls & 0xF) | ((lm & 0xF) << 4);
+            block.scales[j - 4] |= ((ls >> 4) << 6);
+            block.scales[j - 0] |= ((lm >> 4) << 6);
+        }
+    }
+
+    // Re-quantize elements
+    uint8_t L[256];
+    float d_super = half_to_float(block.d);
+    float m_super = half_to_float(block.dmin);
+    for (int j = 0; j < n_groups; ++j) {
+        uint8_t sc, m;
+        get_scale_min_k4(j, block.scales, &sc, &m);
+        float d_eff = d_super * sc;
+        float m_eff = m_super * m;
+        if (d_eff < 1e-10f) d_eff = 1.0f;
+        for (int i = 0; i < group_size && j * group_size + i < count; ++i) {
+            int l = static_cast<int>(std::round((src[j * group_size + i] + m_eff) / d_eff));
+            L[j * group_size + i] = static_cast<uint8_t>(std::max(0, std::min(15, l)));
+        }
+        for (int i = std::max(0, count - j * group_size); i < group_size; ++i) {
+            L[j * group_size + i] = 0;
+        }
+    }
+
+    // Pack 2 × 4-bit per byte, 64 elements at a time
+    uint8_t* q = block.qs;
+    for (int j = 0; j < 256; j += 64) {
+        for (int l = 0; l < 32; ++l) {
+            q[l] = L[j + l] | (L[j + l + 32] << 4);
+        }
+        q += 32;
+    }
+}
+
+static void quantize_block_q5_K(block_q5_K& block, const float* src, int count) {
+    int n_groups = 8;
+    int group_size = 32;
+    float max_scale = 0.0f, max_min = 0.0f;
+    float scales[8], mins[8];
+
+    for (int j = 0; j < n_groups; ++j) {
+        if (j * group_size >= count) {
+            scales[j] = 0.0f;
+            mins[j] = 0.0f;
+            continue;
+        }
+        float g_min = src[j * group_size], g_max = src[j * group_size];
+        for (int i = 1; i < group_size && j * group_size + i < count; ++i) {
+            float v = src[j * group_size + i];
+            if (v < g_min) g_min = v;
+            if (v > g_max) g_max = v;
+        }
+        float range = g_max - g_min;
+        if (range < 1e-10f) range = 1.0f;
+        scales[j] = range / 31.0f;
+        float clamped_min = (g_min < 0) ? g_min : 0;
+        mins[j] = -clamped_min;
+        if (scales[j] > max_scale) max_scale = scales[j];
+        if (mins[j] > max_min) max_min = mins[j];
+    }
+
+    float inv_scale = max_scale > 0.0f ? 63.0f / max_scale : 0.0f;
+    float inv_min = max_min > 0.0f ? 63.0f / max_min : 0.0f;
+    block.d = float_to_half(max_scale / 63.0f);
+    block.dmin = float_to_half(max_min / 63.0f);
+
+    memset(block.scales, 0, 12);
+    for (int j = 0; j < n_groups; ++j) {
+        uint8_t ls = std::min(63, std::max(0, static_cast<int>(std::round(scales[j] * inv_scale))));
+        uint8_t lm = std::min(63, std::max(0, static_cast<int>(std::round(mins[j] * inv_min))));
+        if (j < 4) {
+            block.scales[j] = ls;
+            block.scales[j + 4] = lm;
+        } else {
+            block.scales[j + 4] = (ls & 0xF) | ((lm & 0xF) << 4);
+            block.scales[j - 4] |= ((ls >> 4) << 6);
+            block.scales[j - 0] |= ((lm >> 4) << 6);
+        }
+    }
+
+    uint8_t L[256];
+    float d_super = half_to_float(block.d);
+    float m_super = half_to_float(block.dmin);
+    for (int j = 0; j < n_groups; ++j) {
+        uint8_t sc, m;
+        get_scale_min_k4(j, block.scales, &sc, &m);
+        float d_eff = d_super * sc;
+        float m_eff = m_super * m;
+        if (d_eff < 1e-10f) d_eff = 1.0f;
+        for (int i = 0; i < group_size && j * group_size + i < count; ++i) {
+            int l = static_cast<int>(std::round((src[j * group_size + i] + m_eff) / d_eff));
+            L[j * group_size + i] = static_cast<uint8_t>(std::max(0, std::min(31, l)));
+        }
+        for (int i = std::max(0, count - j * group_size); i < group_size; ++i) {
+            L[j * group_size + i] = 0;
+        }
+    }
+
+    uint8_t* qh = block.qh;
+    memset(qh, 0, 32);
+    uint8_t* q = block.qs;
+    uint8_t m1 = 1, m2 = 2;
+    for (int j = 0; j < 256; j += 64) {
+        for (int l = 0; l < 32; ++l) {
+            int l1 = L[j + l];
+            int l2 = L[j + l + 32];
+            if (l1 > 15) { l1 -= 16; qh[l] |= m1; }
+            if (l2 > 15) { l2 -= 16; qh[l] |= m2; }
+            q[l] = static_cast<uint8_t>(l1 | (l2 << 4));
+        }
+        q += 32;
+        m1 <<= 2; m2 <<= 2;
+    }
+}
+
+static void quantize_block_q6_K(block_q6_K& block, const float* src, int count) {
+    int n_sub = 16;
+    int sub_size = 16;
+    float max_abs_scale = 0.0f;
+    float sub_scales[16];
+
+    for (int j = 0; j < n_sub; ++j) {
+        float amax = 0.0f;
+        for (int i = 0; i < sub_size && j * sub_size + i < count; ++i) {
+            amax = std::max(amax, std::abs(src[j * sub_size + i]));
+        }
+        sub_scales[j] = (amax < 1e-10f) ? 0.0f : (amax / 32.0f);
+        float abs_s = std::abs(sub_scales[j]);
+        if (abs_s > max_abs_scale) max_abs_scale = abs_s;
+    }
+
+    if (max_abs_scale < 1e-10f) {
+        memset(&block, 0, sizeof(block));
+        block.d = float_to_half(0.0f);
+        return;
+    }
+
+    float iscale = -128.0f / max_abs_scale;
+    block.d = float_to_half(1.0f / iscale);
+    for (int j = 0; j < n_sub; ++j) {
+        block.scales[j] = static_cast<int8_t>(std::max(-128, std::min(127, static_cast<int>(std::round(iscale * sub_scales[j])))));
+    }
+
+    int8_t L[256];
+    float d_all = half_to_float(block.d);
+    for (int j = 0; j < n_sub; ++j) {
+        float d_sub = d_all * block.scales[j];
+        if (std::abs(d_sub) < 1e-10f) d_sub = 1.0f;
+        for (int i = 0; i < sub_size && j * sub_size + i < count; ++i) {
+            int l = static_cast<int>(std::round(src[j * sub_size + i] / d_sub));
+            l = std::max(-32, std::min(31, l));
+            L[j * sub_size + i] = static_cast<int8_t>(l);
+        }
+        for (int i = std::max(0, count - j * sub_size); i < sub_size; ++i) {
+            L[j * sub_size + i] = 0;
+        }
+    }
+
+    // Pack: low 4 bits in ql, high 2 bits in qh (GGML batch layout)
+    memset(block.ql, 0, 128);
+    memset(block.qh, 0, 64);
+    for (int n = 0; n < 256; n += 128) {
+        for (int l = 0; l < 32; ++l) {
+            int v0 = L[n + l] + 32;
+            int v1 = L[n + l + 32] + 32;
+            int v2 = L[n + l + 64] + 32;
+            int v3 = L[n + l + 96] + 32;
+            block.ql[n / 2 + l] = (v0 & 0xF) | ((v2 & 0xF) << 4);
+            block.ql[n / 2 + l + 32] = (v1 & 0xF) | ((v3 & 0xF) << 4);
+        }
+        for (int l = 0; l < 32; ++l) {
+            int v0 = L[n + l] + 32;
+            int v1 = L[n + l + 32] + 32;
+            int v2 = L[n + l + 64] + 32;
+            int v3 = L[n + l + 96] + 32;
+            block.qh[n / 4 + l] = ((v0 >> 4) & 3) | (((v1 >> 4) & 3) << 2) |
+                                  (((v2 >> 4) & 3) << 4) | (((v3 >> 4) & 3) << 6);
+        }
+    }
+}
+
+// ── Quantize (public API) ──────────────────────────────────────────────
+
 Expected<void> quantize(Tensor& dst, const Tensor& src, QuantFormat format) {
     auto* src_ptr = src.data<const float>();
     auto* dst_ptr = static_cast<char*>(dst.storage()->data);
     const auto& shape = src.type().shape();
 
-    // For 2D tensors, quantize each row separately (row-major block layout for matmul)
+    bool is_kquant = (format == QuantFormat::Q2_K || format == QuantFormat::Q3_K ||
+                      format == QuantFormat::Q4_K || format == QuantFormat::Q5_K ||
+                      format == QuantFormat::Q6_K);
+    int block_size = is_kquant ? 256 : 32;
+
+    // For 2D tensors, quantize each row separately
     if (shape.size() == 2) {
         auto M = shape[0];
         auto K = shape[1];
-        size_t blocks_per_row = (static_cast<size_t>(K) + 31) / 32;
+        size_t blocks_per_row = (static_cast<size_t>(K) + block_size - 1) / block_size;
 
         switch (format) {
             case QuantFormat::Q8_0: {
@@ -634,6 +1106,61 @@ Expected<void> quantize(Tensor& dst, const Tensor& src, QuantFormat format) {
                 }
                 return {};
             }
+            case QuantFormat::Q2_K: {
+                auto* blocks = reinterpret_cast<block_q2_K*>(dst_ptr);
+                for (int64_t row = 0; row < M; ++row) {
+                    for (size_t bk = 0; bk < blocks_per_row; ++bk) {
+                        int64_t offset = static_cast<int64_t>(bk) * 256;
+                        int count = static_cast<int>(std::min(static_cast<int64_t>(256), K - offset));
+                        quantize_block_q2_K(blocks[row * blocks_per_row + bk], src_ptr + row * K + offset, count);
+                    }
+                }
+                return {};
+            }
+            case QuantFormat::Q3_K: {
+                auto* blocks = reinterpret_cast<block_q3_K*>(dst_ptr);
+                for (int64_t row = 0; row < M; ++row) {
+                    for (size_t bk = 0; bk < blocks_per_row; ++bk) {
+                        int64_t offset = static_cast<int64_t>(bk) * 256;
+                        int count = static_cast<int>(std::min(static_cast<int64_t>(256), K - offset));
+                        quantize_block_q3_K(blocks[row * blocks_per_row + bk], src_ptr + row * K + offset, count);
+                    }
+                }
+                return {};
+            }
+            case QuantFormat::Q4_K: {
+                auto* blocks = reinterpret_cast<block_q4_K*>(dst_ptr);
+                for (int64_t row = 0; row < M; ++row) {
+                    for (size_t bk = 0; bk < blocks_per_row; ++bk) {
+                        int64_t offset = static_cast<int64_t>(bk) * 256;
+                        int count = static_cast<int>(std::min(static_cast<int64_t>(256), K - offset));
+                        quantize_block_q4_K(blocks[row * blocks_per_row + bk], src_ptr + row * K + offset, count);
+                    }
+                }
+                return {};
+            }
+            case QuantFormat::Q5_K: {
+                auto* blocks = reinterpret_cast<block_q5_K*>(dst_ptr);
+                for (int64_t row = 0; row < M; ++row) {
+                    for (size_t bk = 0; bk < blocks_per_row; ++bk) {
+                        int64_t offset = static_cast<int64_t>(bk) * 256;
+                        int count = static_cast<int>(std::min(static_cast<int64_t>(256), K - offset));
+                        quantize_block_q5_K(blocks[row * blocks_per_row + bk], src_ptr + row * K + offset, count);
+                    }
+                }
+                return {};
+            }
+            case QuantFormat::Q6_K: {
+                auto* blocks = reinterpret_cast<block_q6_K*>(dst_ptr);
+                for (int64_t row = 0; row < M; ++row) {
+                    for (size_t bk = 0; bk < blocks_per_row; ++bk) {
+                        int64_t offset = static_cast<int64_t>(bk) * 256;
+                        int count = static_cast<int>(std::min(static_cast<int64_t>(256), K - offset));
+                        quantize_block_q6_K(blocks[row * blocks_per_row + bk], src_ptr + row * K + offset, count);
+                    }
+                }
+                return {};
+            }
             default:
                 return Error{"cpu::quantize: unsupported format"};
         }
@@ -641,7 +1168,7 @@ Expected<void> quantize(Tensor& dst, const Tensor& src, QuantFormat format) {
 
     // Flat (1D) quantization
     auto numel = src.type().numel();
-    size_t num_blocks = (static_cast<size_t>(numel) + 31) / 32;
+    size_t num_blocks = (static_cast<size_t>(numel) + block_size - 1) / block_size;
 
     switch (format) {
         case QuantFormat::Q8_0: {
@@ -659,6 +1186,51 @@ Expected<void> quantize(Tensor& dst, const Tensor& src, QuantFormat format) {
                 int offset = static_cast<int>(b * 32);
                 int count = std::min(32, static_cast<int>(numel) - offset);
                 quantize_block_q4_0(blocks[b], src_ptr + offset, count);
+            }
+            return {};
+        }
+        case QuantFormat::Q2_K: {
+            auto* blocks = reinterpret_cast<block_q2_K*>(dst_ptr);
+            for (size_t b = 0; b < num_blocks; ++b) {
+                int64_t offset = static_cast<int64_t>(b) * 256;
+                int count = static_cast<int>(std::min(static_cast<int64_t>(256), static_cast<int64_t>(numel) - offset));
+                quantize_block_q2_K(blocks[b], src_ptr + offset, count);
+            }
+            return {};
+        }
+        case QuantFormat::Q3_K: {
+            auto* blocks = reinterpret_cast<block_q3_K*>(dst_ptr);
+            for (size_t b = 0; b < num_blocks; ++b) {
+                int64_t offset = static_cast<int64_t>(b) * 256;
+                int count = static_cast<int>(std::min(static_cast<int64_t>(256), static_cast<int64_t>(numel) - offset));
+                quantize_block_q3_K(blocks[b], src_ptr + offset, count);
+            }
+            return {};
+        }
+        case QuantFormat::Q4_K: {
+            auto* blocks = reinterpret_cast<block_q4_K*>(dst_ptr);
+            for (size_t b = 0; b < num_blocks; ++b) {
+                int64_t offset = static_cast<int64_t>(b) * 256;
+                int count = static_cast<int>(std::min(static_cast<int64_t>(256), static_cast<int64_t>(numel) - offset));
+                quantize_block_q4_K(blocks[b], src_ptr + offset, count);
+            }
+            return {};
+        }
+        case QuantFormat::Q5_K: {
+            auto* blocks = reinterpret_cast<block_q5_K*>(dst_ptr);
+            for (size_t b = 0; b < num_blocks; ++b) {
+                int64_t offset = static_cast<int64_t>(b) * 256;
+                int count = static_cast<int>(std::min(static_cast<int64_t>(256), static_cast<int64_t>(numel) - offset));
+                quantize_block_q5_K(blocks[b], src_ptr + offset, count);
+            }
+            return {};
+        }
+        case QuantFormat::Q6_K: {
+            auto* blocks = reinterpret_cast<block_q6_K*>(dst_ptr);
+            for (size_t b = 0; b < num_blocks; ++b) {
+                int64_t offset = static_cast<int64_t>(b) * 256;
+                int count = static_cast<int>(std::min(static_cast<int64_t>(256), static_cast<int64_t>(numel) - offset));
+                quantize_block_q6_K(blocks[b], src_ptr + offset, count);
             }
             return {};
         }
@@ -696,10 +1268,160 @@ Expected<void> dequantize(Tensor& dst, const Tensor& src) {
         }
     };
 
+    auto dequantize_block_q2_K = [&](const block_q2_K& block, float* out, int count) {
+        float d = half_to_float(block.d);
+        float min = half_to_float(block.dmin);
+        const uint8_t* q = block.qs;
+        int is = 0;
+        int written = 0;
+        for (int n = 0; n < 256 && written < count; n += 128) {
+            int shift = 0;
+            for (int j = 0; j < 4; ++j) {
+                uint8_t sc = block.scales[is++];
+                float dl = d * (sc & 0xF);
+                float ml = min * (sc >> 4);
+                for (int l = 0; l < 16 && written < count; ++l) {
+                    out[written++] = dl * static_cast<float>((q[l] >> shift) & 3) - ml;
+                }
+                sc = block.scales[is++];
+                dl = d * (sc & 0xF);
+                ml = min * (sc >> 4);
+                for (int l = 0; l < 16 && written < count; ++l) {
+                    out[written++] = dl * static_cast<float>((q[l + 16] >> shift) & 3) - ml;
+                }
+                shift += 2;
+            }
+            q += 32;
+        }
+    };
+
+    auto dequantize_block_q3_K = [&](const block_q3_K& block, float* out, int count) {
+        float d_all = half_to_float(block.d);
+        const uint8_t* q = block.qs;
+        const uint8_t* hm = block.hmask;
+        const int8_t* scales_ptr = nullptr;
+        uint32_t aux[4];
+        uint32_t kmask1 = 0x03030303;
+        uint32_t kmask2 = 0x0f0f0f0f;
+        memcpy(aux, block.scales, 12);
+        uint32_t tmp = aux[2];
+        aux[2] = ((aux[0] >> 4) & kmask2) | (((tmp >> 4) & kmask1) << 4);
+        aux[3] = ((aux[1] >> 4) & kmask2) | (((tmp >> 6) & kmask1) << 4);
+        aux[0] = (aux[0] & kmask2) | (((tmp >> 0) & kmask1) << 4);
+        aux[1] = (aux[1] & kmask2) | (((tmp >> 2) & kmask1) << 4);
+        scales_ptr = reinterpret_cast<const int8_t*>(aux);
+
+        uint8_t m = 1;
+        int is = 0;
+        int written = 0;
+        for (int n = 0; n < 256 && written < count; n += 128) {
+            int shift = 0;
+            for (int j = 0; j < 4; ++j) {
+                float dl = d_all * static_cast<float>(scales_ptr[is++] - 32);
+                for (int l = 0; l < 16 && written < count; ++l) {
+                    int8_t qv = static_cast<int8_t>((q[l] >> shift) & 3);
+                    out[written++] = dl * (qv - ((hm[l] & m) ? 0 : 4));
+                }
+                dl = d_all * static_cast<float>(scales_ptr[is++] - 32);
+                for (int l = 0; l < 16 && written < count; ++l) {
+                    int8_t qv = static_cast<int8_t>((q[l + 16] >> shift) & 3);
+                    out[written++] = dl * (qv - ((hm[l + 16] & m) ? 0 : 4));
+                }
+                shift += 2;
+                m <<= 1;
+            }
+            q += 32;
+        }
+    };
+
+    auto dequantize_block_q4_K = [&](const block_q4_K& block, float* out, int count) {
+        const uint8_t* q = block.qs;
+        float d = half_to_float(block.d);
+        float min = half_to_float(block.dmin);
+        int is = 0;
+        int written = 0;
+        for (int j = 0; j < 256 && written < count; j += 64) {
+            uint8_t sc, m;
+            get_scale_min_k4(is, block.scales, &sc, &m);
+            float d1 = d * sc;
+            float m1 = min * m;
+            get_scale_min_k4(is + 1, block.scales, &sc, &m);
+            float d2 = d * sc;
+            float m2 = min * m;
+            for (int l = 0; l < 32 && written < count; ++l) {
+                out[written++] = d1 * (q[l] & 0xF) - m1;
+            }
+            for (int l = 0; l < 32 && written < count; ++l) {
+                out[written++] = d2 * (q[l] >> 4) - m2;
+            }
+            q += 32;
+            is += 2;
+        }
+    };
+
+    auto dequantize_block_q5_K = [&](const block_q5_K& block, float* out, int count) {
+        const uint8_t* ql = block.qs;
+        const uint8_t* qh = block.qh;
+        float d = half_to_float(block.d);
+        float min = half_to_float(block.dmin);
+        int is = 0;
+        int written = 0;
+        uint8_t u1 = 1, u2 = 2;
+        for (int j = 0; j < 256 && written < count; j += 64) {
+            uint8_t sc, m;
+            get_scale_min_k4(is, block.scales, &sc, &m);
+            float d1 = d * sc;
+            float m1 = min * m;
+            get_scale_min_k4(is + 1, block.scales, &sc, &m);
+            float d2 = d * sc;
+            float m2 = min * m;
+            for (int l = 0; l < 32 && written < count; ++l) {
+                out[written++] = d1 * ((ql[l] & 0xF) + ((qh[l] & u1) ? 16 : 0)) - m1;
+            }
+            for (int l = 0; l < 32 && written < count; ++l) {
+                out[written++] = d2 * ((ql[l] >> 4) + ((qh[l] & u2) ? 16 : 0)) - m2;
+            }
+            ql += 32;
+            u1 <<= 2; u2 <<= 2;
+            is += 2;
+        }
+    };
+
+    auto dequantize_block_q6_K = [&](const block_q6_K& block, float* out, int count) {
+        float d = half_to_float(block.d);
+        const uint8_t* ql = block.ql;
+        const uint8_t* qh = block.qh;
+        const int8_t* sc = block.scales;
+        int written = 0;
+        for (int n = 0; n < 256 && written < count; n += 128) {
+            for (int l = 0; l < 32 && written < count; ++l) {
+                int is = l / 16;
+                int8_t q1 = static_cast<int8_t>((ql[l] & 0xF) | (((qh[l] >> 0) & 3) << 4)) - 32;
+                int8_t q2 = static_cast<int8_t>((ql[l + 32] & 0xF) | (((qh[l] >> 2) & 3) << 4)) - 32;
+                int8_t q3 = static_cast<int8_t>((ql[l] >> 4) | (((qh[l] >> 4) & 3) << 4)) - 32;
+                int8_t q4 = static_cast<int8_t>((ql[l + 32] >> 4) | (((qh[l] >> 6) & 3) << 4)) - 32;
+                if (written < count) out[written] = d * sc[is] * q1;
+                if (written + 32 < count) out[written + 32] = d * sc[is + 2] * q2;
+                if (written + 64 < count) out[written + 64] = d * sc[is + 4] * q3;
+                if (written + 96 < count) out[written + 96] = d * sc[is + 6] * q4;
+                ++written;
+            }
+            written += 3 * 32;
+            ql += 64;
+            qh += 32;
+            sc += 8;
+        }
+    };
+
+    bool is_kquant = (format == QuantFormat::Q2_K || format == QuantFormat::Q3_K ||
+                      format == QuantFormat::Q4_K || format == QuantFormat::Q5_K ||
+                      format == QuantFormat::Q6_K);
+    int block_size = is_kquant ? 256 : 32;
+
     if (shape.size() == 2) {
         auto M = shape[0];
         auto K = shape[1];
-        size_t blocks_per_row = (static_cast<size_t>(K) + 31) / 32;
+        size_t blocks_per_row = (static_cast<size_t>(K) + block_size - 1) / block_size;
 
         switch (format) {
             case QuantFormat::Q8_0: {
@@ -724,6 +1446,61 @@ Expected<void> dequantize(Tensor& dst, const Tensor& src) {
                 }
                 return {};
             }
+            case QuantFormat::Q2_K: {
+                auto* blocks = reinterpret_cast<const block_q2_K*>(src_ptr);
+                for (int64_t row = 0; row < M; ++row) {
+                    for (size_t bk = 0; bk < blocks_per_row; ++bk) {
+                        int64_t offset = static_cast<int64_t>(bk) * 256;
+                        int count = static_cast<int>(std::min(static_cast<int64_t>(256), K - offset));
+                        dequantize_block_q2_K(blocks[row * blocks_per_row + bk], dst_ptr + row * K + offset, count);
+                    }
+                }
+                return {};
+            }
+            case QuantFormat::Q3_K: {
+                auto* blocks = reinterpret_cast<const block_q3_K*>(src_ptr);
+                for (int64_t row = 0; row < M; ++row) {
+                    for (size_t bk = 0; bk < blocks_per_row; ++bk) {
+                        int64_t offset = static_cast<int64_t>(bk) * 256;
+                        int count = static_cast<int>(std::min(static_cast<int64_t>(256), K - offset));
+                        dequantize_block_q3_K(blocks[row * blocks_per_row + bk], dst_ptr + row * K + offset, count);
+                    }
+                }
+                return {};
+            }
+            case QuantFormat::Q4_K: {
+                auto* blocks = reinterpret_cast<const block_q4_K*>(src_ptr);
+                for (int64_t row = 0; row < M; ++row) {
+                    for (size_t bk = 0; bk < blocks_per_row; ++bk) {
+                        int64_t offset = static_cast<int64_t>(bk) * 256;
+                        int count = static_cast<int>(std::min(static_cast<int64_t>(256), K - offset));
+                        dequantize_block_q4_K(blocks[row * blocks_per_row + bk], dst_ptr + row * K + offset, count);
+                    }
+                }
+                return {};
+            }
+            case QuantFormat::Q5_K: {
+                auto* blocks = reinterpret_cast<const block_q5_K*>(src_ptr);
+                for (int64_t row = 0; row < M; ++row) {
+                    for (size_t bk = 0; bk < blocks_per_row; ++bk) {
+                        int64_t offset = static_cast<int64_t>(bk) * 256;
+                        int count = static_cast<int>(std::min(static_cast<int64_t>(256), K - offset));
+                        dequantize_block_q5_K(blocks[row * blocks_per_row + bk], dst_ptr + row * K + offset, count);
+                    }
+                }
+                return {};
+            }
+            case QuantFormat::Q6_K: {
+                auto* blocks = reinterpret_cast<const block_q6_K*>(src_ptr);
+                for (int64_t row = 0; row < M; ++row) {
+                    for (size_t bk = 0; bk < blocks_per_row; ++bk) {
+                        int64_t offset = static_cast<int64_t>(bk) * 256;
+                        int count = static_cast<int>(std::min(static_cast<int64_t>(256), K - offset));
+                        dequantize_block_q6_K(blocks[row * blocks_per_row + bk], dst_ptr + row * K + offset, count);
+                    }
+                }
+                return {};
+            }
             default:
                 return Error{"cpu::dequantize: unsupported format"};
         }
@@ -731,7 +1508,7 @@ Expected<void> dequantize(Tensor& dst, const Tensor& src) {
 
     // Flat (1D) dequantization
     auto numel = src.type().numel();
-    size_t num_blocks = (static_cast<size_t>(numel) + 31) / 32;
+    size_t num_blocks = (static_cast<size_t>(numel) + block_size - 1) / block_size;
 
     switch (format) {
         case QuantFormat::Q8_0: {
@@ -749,6 +1526,51 @@ Expected<void> dequantize(Tensor& dst, const Tensor& src) {
                 int offset = static_cast<int>(b * 32);
                 int count = std::min(32, static_cast<int>(numel) - offset);
                 dequantize_block_q4_0(blocks[b], dst_ptr + offset, count);
+            }
+            return {};
+        }
+        case QuantFormat::Q2_K: {
+            auto* blocks = reinterpret_cast<const block_q2_K*>(src_ptr);
+            for (size_t b = 0; b < num_blocks; ++b) {
+                int64_t offset = static_cast<int64_t>(b) * 256;
+                int count = static_cast<int>(std::min(static_cast<int64_t>(256), static_cast<int64_t>(numel) - offset));
+                dequantize_block_q2_K(blocks[b], dst_ptr + offset, count);
+            }
+            return {};
+        }
+        case QuantFormat::Q3_K: {
+            auto* blocks = reinterpret_cast<const block_q3_K*>(src_ptr);
+            for (size_t b = 0; b < num_blocks; ++b) {
+                int64_t offset = static_cast<int64_t>(b) * 256;
+                int count = static_cast<int>(std::min(static_cast<int64_t>(256), static_cast<int64_t>(numel) - offset));
+                dequantize_block_q3_K(blocks[b], dst_ptr + offset, count);
+            }
+            return {};
+        }
+        case QuantFormat::Q4_K: {
+            auto* blocks = reinterpret_cast<const block_q4_K*>(src_ptr);
+            for (size_t b = 0; b < num_blocks; ++b) {
+                int64_t offset = static_cast<int64_t>(b) * 256;
+                int count = static_cast<int>(std::min(static_cast<int64_t>(256), static_cast<int64_t>(numel) - offset));
+                dequantize_block_q4_K(blocks[b], dst_ptr + offset, count);
+            }
+            return {};
+        }
+        case QuantFormat::Q5_K: {
+            auto* blocks = reinterpret_cast<const block_q5_K*>(src_ptr);
+            for (size_t b = 0; b < num_blocks; ++b) {
+                int64_t offset = static_cast<int64_t>(b) * 256;
+                int count = static_cast<int>(std::min(static_cast<int64_t>(256), static_cast<int64_t>(numel) - offset));
+                dequantize_block_q5_K(blocks[b], dst_ptr + offset, count);
+            }
+            return {};
+        }
+        case QuantFormat::Q6_K: {
+            auto* blocks = reinterpret_cast<const block_q6_K*>(src_ptr);
+            for (size_t b = 0; b < num_blocks; ++b) {
+                int64_t offset = static_cast<int64_t>(b) * 256;
+                int count = static_cast<int>(std::min(static_cast<int64_t>(256), static_cast<int64_t>(numel) - offset));
+                dequantize_block_q6_K(blocks[b], dst_ptr + offset, count);
             }
             return {};
         }
@@ -776,7 +1598,6 @@ Expected<void> matmul_q4(Tensor& out, const Tensor& a, const Tensor& b) {
     auto* blocks = reinterpret_cast<const block_q4_0*>(a_data);
     size_t blocks_per_row = (static_cast<size_t>(K) + 31) / 32;
 
-    // Dequantize blocks on-the-fly for each output element
     for (int64_t i = 0; i < M; ++i) {
         for (int64_t j = 0; j < N; ++j) {
             float sum = 0.0f;
@@ -800,6 +1621,333 @@ Expected<void> matmul_q4(Tensor& out, const Tensor& a, const Tensor& b) {
         }
     }
 
+    return {};
+}
+
+// ── Q4_K matmul ────────────────────────────────────────────────────────
+
+Expected<void> matmul_q4_K(Tensor& out, const Tensor& a, const Tensor& b) {
+    if (a.type().shape().size() != 2 || b.type().shape().size() != 2) {
+        return Error{"cpu::matmul_q4_K: inputs must be 2D"};
+    }
+    if (a.type().shape()[1] != b.type().shape()[0]) {
+        return Error{"cpu::matmul_q4_K: inner dimension mismatch"};
+    }
+
+    auto M = a.type().shape()[0];
+    auto K = a.type().shape()[1];
+    auto N = b.type().shape()[1];
+    auto* b_ptr = b.data<const float>();
+    auto* o_ptr = out.data<float>();
+    auto* a_data = static_cast<const char*>(a.storage()->data);
+    auto* blocks = reinterpret_cast<const block_q4_K*>(a_data);
+    size_t blocks_per_row = (static_cast<size_t>(K) + 255) / 256;
+
+    auto get_scale_min = [](int j, const uint8_t* sc_ptr, uint8_t* d_out, uint8_t* m_out) {
+        if (j < 4) {
+            *d_out = sc_ptr[j] & 63;
+            *m_out = sc_ptr[j + 4] & 63;
+        } else {
+            *d_out = (sc_ptr[j + 4] & 0xF) | ((sc_ptr[j - 4] >> 6) << 4);
+            *m_out = (sc_ptr[j + 4] >> 4) | ((sc_ptr[j] >> 6) << 4);
+        }
+    };
+
+    for (int64_t i = 0; i < M; ++i) {
+        for (int64_t j = 0; j < N; ++j) {
+            float sum = 0.0f;
+            for (size_t bk = 0; bk < blocks_per_row; ++bk) {
+                const auto& block = blocks[i * blocks_per_row + bk];
+                float d_super = half_to_float(block.d);
+                float m_super = half_to_float(block.dmin);
+                const uint8_t* q = block.qs;
+                int is = 0;
+                for (int g = 0; g < 256; g += 64) {
+                    uint8_t sc, m;
+                    get_scale_min_k4(is, block.scales, &sc, &m);
+                    float d1 = d_super * sc;
+                    float m1 = m_super * m;
+                    get_scale_min_k4(is + 1, block.scales, &sc, &m);
+                    float d2 = d_super * sc;
+                    float m2 = m_super * m;
+                    for (int l = 0; l < 32; ++l) {
+                        int k_idx = static_cast<int>(bk * 256 + g + l);
+                        if (k_idx < K) {
+                            float val = d1 * (q[l] & 0xF) - m1;
+                            sum += val * b_ptr[static_cast<int64_t>(k_idx) * N + j];
+                        }
+                    }
+                    for (int l = 0; l < 32; ++l) {
+                        int k_idx = static_cast<int>(bk * 256 + g + 32 + l);
+                        if (k_idx < K) {
+                            float val = d2 * (q[l] >> 4) - m2;
+                            sum += val * b_ptr[static_cast<int64_t>(k_idx) * N + j];
+                        }
+                    }
+                    q += 32;
+                    is += 2;
+                }
+            }
+            o_ptr[i * N + j] = sum;
+        }
+    }
+    return {};
+}
+
+// ── Q6_K matmul ────────────────────────────────────────────────────────
+
+Expected<void> matmul_q6_K(Tensor& out, const Tensor& a, const Tensor& b) {
+    if (a.type().shape().size() != 2 || b.type().shape().size() != 2) {
+        return Error{"cpu::matmul_q6_K: inputs must be 2D"};
+    }
+    if (a.type().shape()[1] != b.type().shape()[0]) {
+        return Error{"cpu::matmul_q6_K: inner dimension mismatch"};
+    }
+
+    auto M = a.type().shape()[0];
+    auto K = a.type().shape()[1];
+    auto N = b.type().shape()[1];
+    auto* b_ptr = b.data<const float>();
+    auto* o_ptr = out.data<float>();
+    auto* a_data = static_cast<const char*>(a.storage()->data);
+    auto* blocks = reinterpret_cast<const block_q6_K*>(a_data);
+    size_t blocks_per_row = (static_cast<size_t>(K) + 255) / 256;
+
+    for (int64_t i = 0; i < M; ++i) {
+        for (int64_t j = 0; j < N; ++j) {
+            float sum = 0.0f;
+            for (size_t bk = 0; bk < blocks_per_row; ++bk) {
+                const auto& block = blocks[i * blocks_per_row + bk];
+                float d = half_to_float(block.d);
+                const uint8_t* ql = block.ql;
+                const uint8_t* qh = block.qh;
+                const int8_t* sc = block.scales;
+                for (int n = 0; n < 256; n += 128) {
+                    for (int l = 0; l < 32; ++l) {
+                        int is = l / 16;
+                        int8_t q1 = static_cast<int8_t>((ql[l] & 0xF) | (((qh[l] >> 0) & 3) << 4)) - 32;
+                        int8_t q2 = static_cast<int8_t>((ql[l + 32] & 0xF) | (((qh[l] >> 2) & 3) << 4)) - 32;
+                        int8_t q3 = static_cast<int8_t>((ql[l] >> 4) | (((qh[l] >> 4) & 3) << 4)) - 32;
+                        int8_t q4 = static_cast<int8_t>((ql[l + 32] >> 4) | (((qh[l] >> 6) & 3) << 4)) - 32;
+
+                        int k0 = static_cast<int>(bk * 256 + n + l);
+                        int k1 = static_cast<int>(bk * 256 + n + l + 32);
+                        int k2 = static_cast<int>(bk * 256 + n + l + 64);
+                        int k3 = static_cast<int>(bk * 256 + n + l + 96);
+
+                        if (k0 < K) sum += d * sc[is]     * q1 * b_ptr[static_cast<int64_t>(k0) * N + j];
+                        if (k1 < K) sum += d * sc[is + 2] * q2 * b_ptr[static_cast<int64_t>(k1) * N + j];
+                        if (k2 < K) sum += d * sc[is + 4] * q3 * b_ptr[static_cast<int64_t>(k2) * N + j];
+                        if (k3 < K) sum += d * sc[is + 6] * q4 * b_ptr[static_cast<int64_t>(k3) * N + j];
+                    }
+                    ql += 64;
+                    qh += 32;
+                    sc += 8;
+                }
+            }
+            o_ptr[i * N + j] = sum;
+        }
+    }
+    return {};
+}
+
+// ── Q2_K matmul ────────────────────────────────────────────────────────
+
+Expected<void> matmul_q2_K(Tensor& out, const Tensor& a, const Tensor& b) {
+    if (a.type().shape().size() != 2 || b.type().shape().size() != 2) {
+        return Error{"cpu::matmul_q2_K: inputs must be 2D"};
+    }
+    if (a.type().shape()[1] != b.type().shape()[0]) {
+        return Error{"cpu::matmul_q2_K: inner dimension mismatch"};
+    }
+
+    auto M = a.type().shape()[0];
+    auto K = a.type().shape()[1];
+    auto N = b.type().shape()[1];
+    auto* b_ptr = b.data<const float>();
+    auto* o_ptr = out.data<float>();
+    auto* a_data = static_cast<const char*>(a.storage()->data);
+    auto* blocks = reinterpret_cast<const block_q2_K*>(a_data);
+    size_t blocks_per_row = (static_cast<size_t>(K) + 255) / 256;
+
+    for (int64_t i = 0; i < M; ++i) {
+        for (int64_t j = 0; j < N; ++j) {
+            float sum = 0.0f;
+            for (size_t bk = 0; bk < blocks_per_row; ++bk) {
+                const auto& block = blocks[i * blocks_per_row + bk];
+                float d = half_to_float(block.d);
+                float min = half_to_float(block.dmin);
+                const uint8_t* q = block.qs;
+                int is = 0;
+                for (int n = 0; n < 256; n += 128) {
+                    int shift = 0;
+                    for (int s = 0; s < 4; ++s) {
+                        uint8_t sc = block.scales[is++];
+                        float dl = d * (sc & 0xF);
+                        float ml = min * (sc >> 4);
+                        for (int l = 0; l < 16; ++l) {
+                            int k_idx = static_cast<int>(bk * 256 + n + s * 32 + l);
+                            if (k_idx < K) {
+                                float val = dl * static_cast<float>((q[l] >> shift) & 3) - ml;
+                                sum += val * b_ptr[static_cast<int64_t>(k_idx) * N + j];
+                            }
+                        }
+                        sc = block.scales[is++];
+                        dl = d * (sc & 0xF);
+                        ml = min * (sc >> 4);
+                        for (int l = 0; l < 16; ++l) {
+                            int k_idx = static_cast<int>(bk * 256 + n + s * 32 + 16 + l);
+                            if (k_idx < K) {
+                                float val = dl * static_cast<float>((q[l + 16] >> shift) & 3) - ml;
+                                sum += val * b_ptr[static_cast<int64_t>(k_idx) * N + j];
+                            }
+                        }
+                        shift += 2;
+                    }
+                    q += 32;
+                }
+            }
+            o_ptr[i * N + j] = sum;
+        }
+    }
+    return {};
+}
+
+// ── Q3_K matmul ────────────────────────────────────────────────────────
+
+Expected<void> matmul_q3_K(Tensor& out, const Tensor& a, const Tensor& b) {
+    if (a.type().shape().size() != 2 || b.type().shape().size() != 2) {
+        return Error{"cpu::matmul_q3_K: inputs must be 2D"};
+    }
+    if (a.type().shape()[1] != b.type().shape()[0]) {
+        return Error{"cpu::matmul_q3_K: inner dimension mismatch"};
+    }
+
+    auto M = a.type().shape()[0];
+    auto K = a.type().shape()[1];
+    auto N = b.type().shape()[1];
+    auto* b_ptr = b.data<const float>();
+    auto* o_ptr = out.data<float>();
+    auto* a_data = static_cast<const char*>(a.storage()->data);
+    auto* blocks = reinterpret_cast<const block_q3_K*>(a_data);
+    size_t blocks_per_row = (static_cast<size_t>(K) + 255) / 256;
+
+    for (int64_t i = 0; i < M; ++i) {
+        for (int64_t j = 0; j < N; ++j) {
+            float sum = 0.0f;
+            for (size_t bk = 0; bk < blocks_per_row; ++bk) {
+                const auto& block = blocks[i * blocks_per_row + bk];
+                float d_all = half_to_float(block.d);
+                const uint8_t* q = block.qs;
+                const uint8_t* hm = block.hmask;
+
+                // Unpack scales (same as dequantize)
+                uint32_t aux[4];
+                uint32_t kmask1 = 0x03030303;
+                uint32_t kmask2 = 0x0f0f0f0f;
+                memcpy(aux, block.scales, 12);
+                uint32_t tmp = aux[2];
+                aux[2] = ((aux[0] >> 4) & kmask2) | (((tmp >> 4) & kmask1) << 4);
+                aux[3] = ((aux[1] >> 4) & kmask2) | (((tmp >> 6) & kmask1) << 4);
+                aux[0] = (aux[0] & kmask2) | (((tmp >> 0) & kmask1) << 4);
+                aux[1] = (aux[1] & kmask2) | (((tmp >> 2) & kmask1) << 4);
+                const int8_t* scales_ptr = reinterpret_cast<const int8_t*>(aux);
+
+                uint8_t m = 1;
+                int is = 0;
+                for (int n = 0; n < 256; n += 128) {
+                    int shift = 0;
+                    for (int s = 0; s < 4; ++s) {
+                        float dl = d_all * static_cast<float>(scales_ptr[is++] - 32);
+                        for (int l = 0; l < 16; ++l) {
+                            int k_idx = static_cast<int>(bk * 256 + n + s * 32 + l);
+                            if (k_idx < K) {
+                                int8_t qv = static_cast<int8_t>((q[l] >> shift) & 3);
+                                float val = dl * (qv - ((hm[l] & m) ? 0 : 4));
+                                sum += val * b_ptr[static_cast<int64_t>(k_idx) * N + j];
+                            }
+                        }
+                        dl = d_all * static_cast<float>(scales_ptr[is++] - 32);
+                        for (int l = 0; l < 16; ++l) {
+                            int k_idx = static_cast<int>(bk * 256 + n + s * 32 + 16 + l);
+                            if (k_idx < K) {
+                                int8_t qv = static_cast<int8_t>((q[l + 16] >> shift) & 3);
+                                float val = dl * (qv - ((hm[l + 16] & m) ? 0 : 4));
+                                sum += val * b_ptr[static_cast<int64_t>(k_idx) * N + j];
+                            }
+                        }
+                        shift += 2;
+                        m <<= 1;
+                    }
+                    q += 32;
+                }
+            }
+            o_ptr[i * N + j] = sum;
+        }
+    }
+    return {};
+}
+
+// ── Q5_K matmul ────────────────────────────────────────────────────────
+
+Expected<void> matmul_q5_K(Tensor& out, const Tensor& a, const Tensor& b) {
+    if (a.type().shape().size() != 2 || b.type().shape().size() != 2) {
+        return Error{"cpu::matmul_q5_K: inputs must be 2D"};
+    }
+    if (a.type().shape()[1] != b.type().shape()[0]) {
+        return Error{"cpu::matmul_q5_K: inner dimension mismatch"};
+    }
+
+    auto M = a.type().shape()[0];
+    auto K = a.type().shape()[1];
+    auto N = b.type().shape()[1];
+    auto* b_ptr = b.data<const float>();
+    auto* o_ptr = out.data<float>();
+    auto* a_data = static_cast<const char*>(a.storage()->data);
+    auto* blocks = reinterpret_cast<const block_q5_K*>(a_data);
+    size_t blocks_per_row = (static_cast<size_t>(K) + 255) / 256;
+
+    for (int64_t i = 0; i < M; ++i) {
+        for (int64_t j = 0; j < N; ++j) {
+            float sum = 0.0f;
+            for (size_t bk = 0; bk < blocks_per_row; ++bk) {
+                const auto& block = blocks[i * blocks_per_row + bk];
+                float d_super = half_to_float(block.d);
+                float m_super = half_to_float(block.dmin);
+                const uint8_t* ql = block.qs;
+                const uint8_t* qh = block.qh;
+                int is = 0;
+                uint8_t u1 = 1, u2 = 2;
+                for (int g = 0; g < 256; g += 64) {
+                    uint8_t sc, m;
+                    get_scale_min_k4(is, block.scales, &sc, &m);
+                    float d1 = d_super * sc;
+                    float m1 = m_super * m;
+                    get_scale_min_k4(is + 1, block.scales, &sc, &m);
+                    float d2 = d_super * sc;
+                    float m2 = m_super * m;
+                    for (int l = 0; l < 32; ++l) {
+                        int k_idx = static_cast<int>(bk * 256 + g + l);
+                        if (k_idx < K) {
+                            float val = d1 * ((ql[l] & 0xF) + ((qh[l] & u1) ? 16 : 0)) - m1;
+                            sum += val * b_ptr[static_cast<int64_t>(k_idx) * N + j];
+                        }
+                    }
+                    for (int l = 0; l < 32; ++l) {
+                        int k_idx = static_cast<int>(bk * 256 + g + 32 + l);
+                        if (k_idx < K) {
+                            float val = d2 * ((ql[l] >> 4) + ((qh[l] & u2) ? 16 : 0)) - m2;
+                            sum += val * b_ptr[static_cast<int64_t>(k_idx) * N + j];
+                        }
+                    }
+                    ql += 32;
+                    u1 <<= 2; u2 <<= 2;
+                    is += 2;
+                }
+            }
+            o_ptr[i * N + j] = sum;
+        }
+    }
     return {};
 }
 

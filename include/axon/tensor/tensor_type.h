@@ -43,10 +43,17 @@ public:
 
     size_t size_bytes() const {
         if (quant_ != QuantFormat::None) {
-            size_t num_blocks = (static_cast<size_t>(numel()) + 31) / 32;
+            size_t numel_val = static_cast<size_t>(numel());
+            size_t num_blocks_32 = (numel_val + 31) / 32;
+            size_t num_blocks_256 = (numel_val + 255) / 256;
             switch (quant_) {
-                case QuantFormat::Q8_0: return num_blocks * 34;
-                case QuantFormat::Q4_0: return num_blocks * 18;
+                case QuantFormat::Q8_0: return num_blocks_32 * 34;
+                case QuantFormat::Q4_0: return num_blocks_32 * 18;
+                case QuantFormat::Q2_K: return num_blocks_256 * 84;
+                case QuantFormat::Q3_K: return num_blocks_256 * 110;
+                case QuantFormat::Q4_K: return num_blocks_256 * 144;
+                case QuantFormat::Q5_K: return num_blocks_256 * 176;
+                case QuantFormat::Q6_K: return num_blocks_256 * 210;
                 default: return 0;
             }
         }

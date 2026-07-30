@@ -36,6 +36,11 @@ size_t quantized_size_2d(int64_t M, int64_t K, QuantFormat format);
 Expected<void> quantize(Tensor& dst, const Tensor& src, QuantFormat format);
 Expected<void> dequantize(Tensor& dst, const Tensor& src);
 Expected<void> matmul_q4(Tensor& out, const Tensor& a, const Tensor& b);
+Expected<void> matmul_q2_K(Tensor& out, const Tensor& a, const Tensor& b);
+Expected<void> matmul_q3_K(Tensor& out, const Tensor& a, const Tensor& b);
+Expected<void> matmul_q4_K(Tensor& out, const Tensor& a, const Tensor& b);
+Expected<void> matmul_q5_K(Tensor& out, const Tensor& a, const Tensor& b);
+Expected<void> matmul_q6_K(Tensor& out, const Tensor& a, const Tensor& b);
 
 // Reductions
 Expected<void> reduce_mean(Tensor& out, const Tensor& input, const std::vector<int64_t>& dims);
