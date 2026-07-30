@@ -4,6 +4,7 @@
 #include "axon/nn/mse.h"
 #include "axon/nn/l1_loss.h"
 #include "axon/runtime/runtime.h"
+#include "axon/tensor/tensor_iterator.h"
 #include <cstring>
 #include <cmath>
 #include <limits>
@@ -76,14 +77,15 @@ Expected<void> MatMulOp::backward(Runtime& rt, const GraphNode& node, GradientMa
         auto da_type = TensorType::contiguous({M, K}, a.type().dtype());
         Tensor da(da_type, rt.allocator().allocate(da_type), false);
         auto* da_ptr = da.data<float>();
-        auto* go_ptr = grad_out.data<const float>();
-        auto* b_ptr = b.data<const float>();
+
+        TensorIterator<const float> go_it(grad_out);
+        TensorIterator<const float> b_it(b);
 
         for (int64_t i = 0; i < M; ++i) {
             for (int64_t j = 0; j < K; ++j) {
                 float sum = 0.0f;
                 for (int64_t k = 0; k < N; ++k) {
-                    sum += go_ptr[i * N + k] * b_ptr[j * N + k];
+                    sum += go_it[i * N + k] * b_it[j * N + k];
                 }
                 da_ptr[i * K + j] = sum;
             }
@@ -102,14 +104,15 @@ Expected<void> MatMulOp::backward(Runtime& rt, const GraphNode& node, GradientMa
         auto db_type = TensorType::contiguous({K, N}, b.type().dtype());
         Tensor db(db_type, rt.allocator().allocate(db_type), false);
         auto* db_ptr = db.data<float>();
-        auto* a_ptr = a.data<const float>();
-        auto* go_ptr = grad_out.data<const float>();
+
+        TensorIterator<const float> a_it(a);
+        TensorIterator<const float> go_it(grad_out);
 
         for (int64_t i = 0; i < K; ++i) {
             for (int64_t j = 0; j < N; ++j) {
                 float sum = 0.0f;
                 for (int64_t k = 0; k < M; ++k) {
-                    sum += a_ptr[k * K + i] * go_ptr[k * N + j];
+                    sum += a_it[k * K + i] * go_it[k * N + j];
                 }
                 db_ptr[i * N + j] = sum;
             }
@@ -158,13 +161,13 @@ Expected<void> ReLUOp::backward(Runtime& rt, const GraphNode& node, GradientMap&
     auto dx_type = TensorType::contiguous(x.type().shape(), x.type().dtype());
     Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
 
-    auto* dx_ptr = dx.data<float>();
-    auto* go_ptr = grad_out.data<const float>();
-    auto* x_ptr = x.data<const float>();
+    TensorIterator<const float> x_it(x);
+    TensorIterator<const float> go_it(grad_out);
+    TensorIterator<float> dx_it(dx);
     auto n = x.type().numel();
 
     for (int64_t i = 0; i < n; ++i) {
-        dx_ptr[i] = x_ptr[i] > 0.0f ? go_ptr[i] : 0.0f;
+        dx_it[i] = x_it[i] > 0.0f ? go_it[i] : 0.0f;
     }
 
     const Tensor& input = node.inputs[0];
@@ -252,12 +255,12 @@ Expected<void> AddOp::backward(Runtime& rt, const GraphNode& node, GradientMap& 
             auto db_type = TensorType::contiguous(b.type().shape(), b.type().dtype());
             Tensor db(db_type, rt.allocator().allocate(db_type), false);
             auto* db_ptr = db.data<float>();
-            auto* go_ptr = grad_out.data<const float>();
 
+            TensorIterator<const float> go_it(grad_out);
             for (int64_t j = 0; j < N; ++j) {
                 float sum = 0.0f;
                 for (int64_t i = 0; i < M; ++i) {
-                    sum += go_ptr[i * N + j];
+                    sum += go_it[i * N + j];
                 }
                 db_ptr[j] = sum;
             }
@@ -342,15 +345,15 @@ Expected<void> CrossEntropyLossOp::backward(Runtime& rt, const GraphNode& node, 
     // d_logits = (softmax - one_hot(target)) / N
     auto dlogits_type = TensorType::contiguous({N, C}, logits.type().dtype());
     Tensor dlogits(dlogits_type, rt.allocator().allocate(dlogits_type), false);
-    auto* d_ptr = dlogits.data<float>();
-    auto* ls_ptr = log_softmax_out.data<const float>();
-    auto* t_ptr = targets.data<const int64_t>();
+
+    TensorIterator<const float> ls_it(log_softmax_out);
+    TensorIterator<const int64_t> t_it(targets);
+    TensorIterator<float> d_it(dlogits);
 
     for (int64_t i = 0; i < N; ++i) {
-        float row_sum = 0.0f;
         for (int64_t j = 0; j < C; ++j) {
-            float sm = std::exp(ls_ptr[i * C + j]);
-            d_ptr[i * C + j] = (sm - (j == t_ptr[i] ? 1.0f : 0.0f)) * inv_N;
+            float sm = std::exp(ls_it[i * C + j]);
+            d_it[i * C + j] = (sm - (j == t_it[i] ? 1.0f : 0.0f)) * inv_N;
         }
     }
 
@@ -412,12 +415,13 @@ Expected<void> MSELossOp::backward(Runtime& rt, const GraphNode& node, GradientM
 
     auto dp_type = TensorType::contiguous(pred.type().shape(), pred.type().dtype());
     Tensor dp(dp_type, rt.allocator().allocate(dp_type), false);
-    auto* dp_ptr = dp.data<float>();
-    auto* p_ptr = pred.data<const float>();
-    auto* t_ptr = target.data<const float>();
+
+    TensorIterator<const float> p_it(pred);
+    TensorIterator<const float> t_it(target);
+    TensorIterator<float> dp_it(dp);
 
     for (int64_t i = 0; i < n; ++i) {
-        dp_ptr[i] = (p_ptr[i] - t_ptr[i]) * inv_N;
+        dp_it[i] = (p_it[i] - t_it[i]) * inv_N;
     }
 
     auto it = grads.find(pred.id());
@@ -477,13 +481,14 @@ Expected<void> L1LossOp::backward(Runtime& rt, const GraphNode& node, GradientMa
 
     auto dp_type = TensorType::contiguous(pred.type().shape(), pred.type().dtype());
     Tensor dp(dp_type, rt.allocator().allocate(dp_type), false);
-    auto* dp_ptr = dp.data<float>();
-    auto* p_ptr = pred.data<const float>();
-    auto* t_ptr = target.data<const float>();
+
+    TensorIterator<const float> p_it(pred);
+    TensorIterator<const float> t_it(target);
+    TensorIterator<float> dp_it(dp);
 
     for (int64_t i = 0; i < n; ++i) {
-        float diff = p_ptr[i] - t_ptr[i];
-        dp_ptr[i] = (diff > 0.0f ? 1.0f : (diff < 0.0f ? -1.0f : 0.0f)) * inv_N;
+        float diff = p_it[i] - t_it[i];
+        dp_it[i] = (diff > 0.0f ? 1.0f : (diff < 0.0f ? -1.0f : 0.0f)) * inv_N;
     }
 
     auto it = grads.find(pred.id());
@@ -1198,22 +1203,22 @@ Expected<void> GELUOp::backward(Runtime& rt, const GraphNode& node, GradientMap&
     auto dx_type = TensorType::contiguous(x.type().shape(), x.type().dtype());
     Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
 
-    auto* dx_ptr = dx.data<float>();
-    auto* go_ptr = grad_out.data<const float>();
-    auto* x_ptr = x.data<const float>();
+    TensorIterator<const float> x_it(x);
+    TensorIterator<const float> go_it(grad_out);
+    TensorIterator<float> dx_it(dx);
     auto n = x.type().numel();
     constexpr float alpha = 0.79788456f;
     constexpr float beta = 0.044715f;
 
     for (int64_t i = 0; i < n; ++i) {
-        float xi = x_ptr[i];
+        float xi = x_it[i];
         float x3 = xi * xi * xi;
         float g = alpha * (xi + beta * x3);
         float t = std::tanh(g);
         float t2 = 1.0f - t * t;
         float gprime = alpha * (1.0f + 3.0f * beta * xi * xi);
         float df = 0.5f * (1.0f + t + xi * t2 * gprime);
-        dx_ptr[i] = go_ptr[i] * df;
+        dx_it[i] = go_it[i] * df;
     }
 
     const Tensor& input = node.inputs[0];
