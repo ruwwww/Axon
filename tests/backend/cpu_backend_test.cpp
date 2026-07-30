@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
+#include <cstring>
 #include "axon/backend/cpu_backend.h"
+#include "axon/tensor/tensor_iterator.h"
 #include "axon/runtime/runtime.h"
 
 using namespace axon;
@@ -323,4 +325,237 @@ TEST_CASE("cpu::reduce_mean over all dims", "[backend][cpu]") {
     auto result = cpu::reduce_mean(out, input, {0, 1});
     REQUIRE(result);
     REQUIRE(out.data<float>()[0] == Catch::Approx(3.5f));
+}
+
+// ── Non-contiguous element-wise tests ───────────────────────────────────
+
+TEST_CASE("cpu::add on non-contiguous (transposed) inputs", "[backend][cpu][noncontig]") {
+    Runtime rt;
+    auto storage_a = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage_b = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage_out = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    float a_vals[] = {1,2,3,4,5,6};
+    float b_vals[] = {10,20,30,40,50,60};
+    std::memcpy(storage_a->data, a_vals, 6 * sizeof(float));
+    std::memcpy(storage_b->data, b_vals, 6 * sizeof(float));
+    std::memset(storage_out->data, 0, 6 * sizeof(float));
+
+    // Transposed layout: shape {3,2}, strides {1,3}
+    TensorType tt({3, 2}, {1, 3}, DType::Float32);
+    Tensor a(tt, storage_a, false, 0);
+    Tensor b(tt, storage_b, false, 0);
+    Tensor out(tt, storage_out, false, 0);
+
+    auto result = cpu::add(out, a, b);
+    REQUIRE(result);
+
+    TensorIterator<float> it(out);
+    REQUIRE(it[0] == Catch::Approx(11.0f));  // (0,0) = 1+10
+    REQUIRE(it[1] == Catch::Approx(44.0f));  // (0,1) = 4+40
+    REQUIRE(it[2] == Catch::Approx(22.0f));  // (1,0) = 2+20
+    REQUIRE(it[3] == Catch::Approx(55.0f));  // (1,1) = 5+50
+    REQUIRE(it[4] == Catch::Approx(33.0f));  // (2,0) = 3+30
+    REQUIRE(it[5] == Catch::Approx(66.0f));  // (2,1) = 6+60
+}
+
+TEST_CASE("cpu::sub on non-contiguous (transposed) inputs", "[backend][cpu][noncontig]") {
+    Runtime rt;
+    auto storage_a = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage_b = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage_out = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    float a_vals[] = {10,20,30,40,50,60};
+    float b_vals[] = {1,2,3,4,5,6};
+    std::memcpy(storage_a->data, a_vals, 6 * sizeof(float));
+    std::memcpy(storage_b->data, b_vals, 6 * sizeof(float));
+    std::memset(storage_out->data, 0, 6 * sizeof(float));
+
+    TensorType tt({3, 2}, {1, 3}, DType::Float32);
+    Tensor a(tt, storage_a, false, 0);
+    Tensor b(tt, storage_b, false, 0);
+    Tensor out(tt, storage_out, false, 0);
+
+    auto result = cpu::sub(out, a, b);
+    REQUIRE(result);
+
+    TensorIterator<float> it(out);
+    REQUIRE(it[0] == Catch::Approx(9.0f));
+    REQUIRE(it[1] == Catch::Approx(36.0f));
+    REQUIRE(it[2] == Catch::Approx(18.0f));
+    REQUIRE(it[3] == Catch::Approx(45.0f));
+    REQUIRE(it[4] == Catch::Approx(27.0f));
+    REQUIRE(it[5] == Catch::Approx(54.0f));
+}
+
+TEST_CASE("cpu::mul on non-contiguous (transposed) inputs", "[backend][cpu][noncontig]") {
+    Runtime rt;
+    auto storage_a = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage_b = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage_out = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    float a_vals[] = {1,2,3,4,5,6};
+    float b_vals[] = {2,3,4,5,6,7};
+    std::memcpy(storage_a->data, a_vals, 6 * sizeof(float));
+    std::memcpy(storage_b->data, b_vals, 6 * sizeof(float));
+    std::memset(storage_out->data, 0, 6 * sizeof(float));
+
+    TensorType tt({3, 2}, {1, 3}, DType::Float32);
+    Tensor a(tt, storage_a, false, 0);
+    Tensor b(tt, storage_b, false, 0);
+    Tensor out(tt, storage_out, false, 0);
+
+    auto result = cpu::mul(out, a, b);
+    REQUIRE(result);
+
+    TensorIterator<float> it(out);
+    REQUIRE(it[0] == Catch::Approx(2.0f));
+    REQUIRE(it[1] == Catch::Approx(20.0f));
+    REQUIRE(it[2] == Catch::Approx(6.0f));
+    REQUIRE(it[3] == Catch::Approx(30.0f));
+    REQUIRE(it[4] == Catch::Approx(12.0f));
+    REQUIRE(it[5] == Catch::Approx(42.0f));
+}
+
+TEST_CASE("cpu::div on non-contiguous (transposed) inputs", "[backend][cpu][noncontig]") {
+    Runtime rt;
+    auto storage_a = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage_b = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage_out = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    // Transposed {3,2}, strides {1,3}: flat logical order = storage[0], storage[3], storage[1], storage[4], storage[2], storage[5]
+    // Arrange storage so logical values are: a=[10,40,20,50,30,60], b=[2,4,5,5,10,6]
+    float a_vals[] = {10, 20, 30, 40, 50, 60};   // storage
+    float b_vals[] = {2, 5, 10, 4, 5, 6};
+    std::memcpy(storage_a->data, a_vals, 6 * sizeof(float));
+    std::memcpy(storage_b->data, b_vals, 6 * sizeof(float));
+    std::memset(storage_out->data, 0, 6 * sizeof(float));
+
+    TensorType tt({3, 2}, {1, 3}, DType::Float32);
+    Tensor a(tt, storage_a, false, 0);
+    Tensor b(tt, storage_b, false, 0);
+    Tensor out(tt, storage_out, false, 0);
+
+    auto result = cpu::div(out, a, b);
+    REQUIRE(result);
+
+    // Logical flat order: a[0]=10,a[3]=40,a[1]=20,a[4]=50,a[2]=30,a[5]=60
+    //                      b[0]=2, b[3]=4, b[1]=5, b[4]=5, b[2]=10,b[5]=6
+    //                      result: 5, 10, 4, 10, 3, 10
+    TensorIterator<float> it(out);
+    REQUIRE(it[0] == Catch::Approx(5.0f));
+    REQUIRE(it[1] == Catch::Approx(10.0f));
+    REQUIRE(it[2] == Catch::Approx(4.0f));
+    REQUIRE(it[3] == Catch::Approx(10.0f));
+    REQUIRE(it[4] == Catch::Approx(3.0f));
+    REQUIRE(it[5] == Catch::Approx(10.0f));
+}
+
+TEST_CASE("cpu::relu on non-contiguous (transposed) input", "[backend][cpu][noncontig]") {
+    Runtime rt;
+    auto storage_x = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage_out = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    float x_vals[] = {-1, 2, -3, 4, -5, 6};
+    std::memcpy(storage_x->data, x_vals, 6 * sizeof(float));
+    std::memset(storage_out->data, 0, 6 * sizeof(float));
+
+    TensorType tt({3, 2}, {1, 3}, DType::Float32);
+    Tensor x(tt, storage_x, false, 0);
+    Tensor out(tt, storage_out, false, 0);
+
+    auto result = cpu::relu(out, x);
+    REQUIRE(result);
+
+    TensorIterator<float> it(out);
+    REQUIRE(it[0] == Catch::Approx(0.0f));
+    REQUIRE(it[1] == Catch::Approx(4.0f));
+    REQUIRE(it[2] == Catch::Approx(2.0f));
+    REQUIRE(it[3] == Catch::Approx(0.0f));
+    REQUIRE(it[4] == Catch::Approx(0.0f));
+    REQUIRE(it[5] == Catch::Approx(6.0f));
+}
+
+TEST_CASE("cpu::gelu on non-contiguous (transposed) input", "[backend][cpu][noncontig]") {
+    Runtime rt;
+    auto storage_x = rt.allocator().allocate(TensorType::contiguous({4}, DType::Float32));
+    auto storage_out = rt.allocator().allocate(TensorType::contiguous({4}, DType::Float32));
+    // Transposed {2,2}, strides {1,2}: flat logical order = storage[0], storage[2], storage[1], storage[3]
+    // Arrange storage so logical values are: [-2, -1, 0, 1]
+    // storage = [-2, 0, -1, 1]
+    float x_vals[] = {-2.0f, 0.0f, -1.0f, 1.0f};
+    std::memcpy(storage_x->data, x_vals, 4 * sizeof(float));
+    std::memset(storage_out->data, 0, 4 * sizeof(float));
+
+    TensorType tt({2, 2}, {1, 2}, DType::Float32);
+    Tensor x(tt, storage_x, false, 0);
+    Tensor out(tt, storage_out, false, 0);
+
+    auto result = cpu::gelu(out, x);
+    REQUIRE(result);
+
+    // Logical values: [-2, -1, 0, 1]
+    // Expected gelu: gelu(-2)≈-0.0454, gelu(-1)≈-0.1588, gelu(0)=0, gelu(1)≈0.8412
+    TensorIterator<float> it(out);
+    REQUIRE(it[0] == Catch::Approx(-0.0454f).epsilon(1e-2));
+    REQUIRE(it[1] == Catch::Approx(-0.1588f).epsilon(1e-2));
+    REQUIRE(it[2] == Catch::Approx(0.0f));
+    REQUIRE(it[3] == Catch::Approx(0.8412f).epsilon(1e-2));
+}
+
+TEST_CASE("cpu::log_softmax on non-contiguous (transposed) input", "[backend][cpu][noncontig]") {
+    Runtime rt;
+    auto storage_x = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage_out = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    // Transposed {3,2}, strides {1,3}: flat logical order = storage[0],storage[3],storage[1],storage[4],storage[2],storage[5]
+    // Row 0: flat 0,1 → storage[0],storage[3]
+    // Row 1: flat 2,3 → storage[1],storage[4]
+    // Row 2: flat 4,5 → storage[2],storage[5]
+    // Want rows: [1,2], [3,4], [5,6] — same as contiguous {3,2} with [1,2,3,4,5,6]
+    // So storage = [1, 3, 5, 2, 4, 6]
+    float x_vals[] = {1.0f, 3.0f, 5.0f, 2.0f, 4.0f, 6.0f};
+    std::memcpy(storage_x->data, x_vals, 6 * sizeof(float));
+    std::memset(storage_out->data, 0, 6 * sizeof(float));
+
+    TensorType tt({3, 2}, {1, 3}, DType::Float32);
+    Tensor x(tt, storage_x, false, 0);
+    Tensor out(tt, storage_out, false, 0);
+
+    auto result = cpu::log_softmax(out, x);
+    REQUIRE(result);
+
+    // Contiguous reference with same row data
+    auto x_ref = Tensor::empty(rt, {3, 2});
+    float ref_vals[] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+    std::memcpy(x_ref.data<float>(), ref_vals, 6 * sizeof(float));
+    auto out_ref = Tensor::empty(rt, {3, 2});
+    cpu::log_softmax(out_ref, x_ref);
+
+    TensorIterator<float> it(out);
+    for (int64_t i = 0; i < 6; ++i) {
+        REQUIRE(it[i] == Catch::Approx(out_ref.data<float>()[i]).epsilon(1e-5f));
+    }
+}
+
+TEST_CASE("cpu::softmax on non-contiguous (transposed) input", "[backend][cpu][noncontig]") {
+    Runtime rt;
+    auto storage_x = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage_out = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    // Same layout as log_softmax test
+    float x_vals[] = {1.0f, 3.0f, 5.0f, 2.0f, 4.0f, 6.0f};
+    std::memcpy(storage_x->data, x_vals, 6 * sizeof(float));
+    std::memset(storage_out->data, 0, 6 * sizeof(float));
+
+    TensorType tt({3, 2}, {1, 3}, DType::Float32);
+    Tensor x(tt, storage_x, false, 0);
+    Tensor out(tt, storage_out, false, 0);
+
+    auto result = cpu::softmax(out, x);
+    REQUIRE(result);
+
+    auto x_ref = Tensor::empty(rt, {3, 2});
+    float ref_vals[] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+    std::memcpy(x_ref.data<float>(), ref_vals, 6 * sizeof(float));
+    auto out_ref = Tensor::empty(rt, {3, 2});
+    cpu::softmax(out_ref, x_ref);
+
+    TensorIterator<float> it(out);
+    for (int64_t i = 0; i < 6; ++i) {
+        REQUIRE(it[i] == Catch::Approx(out_ref.data<float>()[i]).epsilon(1e-5f));
+    }
 }

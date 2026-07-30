@@ -1,4 +1,5 @@
 #include "axon/backend/cpu_backend.h"
+#include "axon/tensor/tensor_iterator.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -20,12 +21,12 @@ static Expected<void> elementwise_op(Tensor& out, const Tensor& a, const Tensor&
     if (!check) return check.error();
 
     if (a.type().dtype() == DType::Float32 && b.type().dtype() == DType::Float32 && out.type().dtype() == DType::Float32) {
-        auto* a_ptr = a.data<const float>();
-        auto* b_ptr = b.data<const float>();
-        auto* out_ptr = out.data<float>();
+        const TensorIterator<float> a_it(a);
+        const TensorIterator<float> b_it(b);
+        TensorIterator<float> out_it(out);
         auto n = a.type().numel();
         for (int64_t i = 0; i < n; ++i) {
-            out_ptr[i] = op(a_ptr[i], b_ptr[i]);
+            out_it[i] = op(a_it[i], b_it[i]);
         }
         return {};
     }
@@ -97,12 +98,12 @@ Expected<void> relu(Tensor& out, const Tensor& x) {
         return Error{"cpu::relu: only Float32 supported"};
     }
 
-    auto* x_ptr = x.data<const float>();
-    auto* out_ptr = out.data<float>();
+    const TensorIterator<float> x_it(x);
+    TensorIterator<float> out_it(out);
     auto n = x.type().numel();
 
     for (int64_t i = 0; i < n; ++i) {
-        out_ptr[i] = x_ptr[i] > 0.0f ? x_ptr[i] : 0.0f;
+        out_it[i] = x_it[i] > 0.0f ? x_it[i] : 0.0f;
     }
 
     return {};
@@ -116,18 +117,17 @@ Expected<void> gelu(Tensor& out, const Tensor& x) {
         return Error{"cpu::gelu: only Float32 supported"};
     }
 
-    auto* x_ptr = x.data<const float>();
-    auto* out_ptr = out.data<float>();
+    const TensorIterator<float> x_it(x);
+    TensorIterator<float> out_it(out);
     auto n = x.type().numel();
     constexpr float alpha = 0.79788456f;  // sqrt(2/pi)
     constexpr float beta = 0.044715f;
 
     for (int64_t i = 0; i < n; ++i) {
-        float xi = x_ptr[i];
+        float xi = x_it[i];
         float x3 = xi * xi * xi;
         float inner = alpha * (xi + beta * x3);
-        float tanh_inner = std::tanh(inner);
-        out_ptr[i] = 0.5f * xi * (1.0f + tanh_inner);
+        out_it[i] = 0.5f * xi * (1.0f + std::tanh(inner));
     }
 
     return {};
@@ -145,23 +145,24 @@ Expected<void> log_softmax(Tensor& out, const Tensor& x) {
     int64_t n_rows = shape.size() == 2 ? shape[0] : 1;
     int64_t n_cols = shape.size() == 2 ? shape[1] : shape[0];
 
-    auto* x_ptr = x.data<const float>();
-    auto* out_ptr = out.data<float>();
+    const TensorIterator<float> x_it(x);
+    TensorIterator<float> out_it(out);
 
     for (int64_t i = 0; i < n_rows; ++i) {
-        float max_val = x_ptr[i * n_cols];
+        float max_val = x_it[i * n_cols];
         for (int64_t j = 1; j < n_cols; ++j) {
-            if (x_ptr[i * n_cols + j] > max_val) max_val = x_ptr[i * n_cols + j];
+            float val = x_it[i * n_cols + j];
+            if (val > max_val) max_val = val;
         }
 
         float sum = 0.0f;
         for (int64_t j = 0; j < n_cols; ++j) {
-            sum += std::exp(x_ptr[i * n_cols + j] - max_val);
+            sum += std::exp(x_it[i * n_cols + j] - max_val);
         }
         float log_sum = std::log(sum);
 
         for (int64_t j = 0; j < n_cols; ++j) {
-            out_ptr[i * n_cols + j] = x_ptr[i * n_cols + j] - max_val - log_sum;
+            out_it[i * n_cols + j] = x_it[i * n_cols + j] - max_val - log_sum;
         }
     }
 
@@ -180,23 +181,24 @@ Expected<void> softmax(Tensor& out, const Tensor& x) {
     int64_t n_rows = shape.size() == 2 ? shape[0] : 1;
     int64_t n_cols = shape.size() == 2 ? shape[1] : shape[0];
 
-    auto* x_ptr = x.data<const float>();
-    auto* out_ptr = out.data<float>();
+    const TensorIterator<float> x_it(x);
+    TensorIterator<float> out_it(out);
 
     for (int64_t i = 0; i < n_rows; ++i) {
-        float max_val = x_ptr[i * n_cols];
+        float max_val = x_it[i * n_cols];
         for (int64_t j = 1; j < n_cols; ++j) {
-            if (x_ptr[i * n_cols + j] > max_val) max_val = x_ptr[i * n_cols + j];
+            float val = x_it[i * n_cols + j];
+            if (val > max_val) max_val = val;
         }
 
         float sum = 0.0f;
         for (int64_t j = 0; j < n_cols; ++j) {
-            out_ptr[i * n_cols + j] = std::exp(x_ptr[i * n_cols + j] - max_val);
-            sum += out_ptr[i * n_cols + j];
+            out_it[i * n_cols + j] = std::exp(x_it[i * n_cols + j] - max_val);
+            sum += out_it[i * n_cols + j];
         }
 
         for (int64_t j = 0; j < n_cols; ++j) {
-            out_ptr[i * n_cols + j] /= sum;
+            out_it[i * n_cols + j] /= sum;
         }
     }
 
