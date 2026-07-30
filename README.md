@@ -112,7 +112,7 @@ cifar10_real_data/
 ```
 Axon/
 ├── include/axon/
-│   ├── autograd/           # Graph, GraphNode, OpType, GradientMap, operation structs
+│   ├── autograd/           # Graph, Node base class, concrete Node subclasses, GradientMap, operation structs
 │   ├── backend/            # cpu_backend.h (kernel declarations)
 │   ├── core/               # Expected<T>, types (DType, Device, QuantFormat), serialization
 │   ├── data/               # Dataset interface, DataLoader, CIFAR10, MNIST
@@ -157,7 +157,7 @@ Axon/
                                             │
                                      ┌──────┴──────┐
                                      │    Graph     │
-                                     │  GraphNode[] │
+                                     │  Node[] │
                                      │  each node:  │
                                      │  op, inputs, │
                                      │  output,     │
@@ -169,7 +169,7 @@ Axon/
 ### Key design decisions
 
 - **Runtime is the public API** — not a scheduler or executor. Operations call into the backend and record graph nodes themselves.
-- **Operations own graph recording** — each operation's `forward()` checks `requires_grad`, allocates output, calls the backend kernel, and appends a `GraphNode` if needed.
+- **Operations own graph recording** — each operation's `forward()` checks `requires_grad`, allocates output, calls the backend kernel, and appends a concrete `Node` (`shared_ptr<Node>`) to the `Graph` if needed.
 - **Backend is a namespace of free functions** — `cpu::matmul(out, a, b)`. Receives raw `Tensor*` pointers. Never accesses the Graph. Adding a GPU backend means adding `cuda::matmul(...)`.
 - **Tensor is a lightweight frontend** — holds `shared_ptr<Storage>` and an immutable `TensorType` descriptor. Copyable, reference-counted memory.
 - **No exceptions** — all fallible operations return `Expected<T>`, a `std::variant<T, Error>`.
@@ -184,8 +184,8 @@ Axon/
 | TensorType | Immutable shape/strides/dtype/device/quant descriptor |
 | Runtime | Execution context (allocator, autograd, training mode) |
 | Operation | Stateless functor with `forward()` and `backward()` |
-| Graph | Linear sequence of GraphNodes recorded during forward |
-| GraphNode | One recorded operation: op type, inputs, output, runtime*, op_data |
+| Graph | Linear sequence of Node objects recorded during forward |
+| Node | Abstract base class for autograd nodes; implements virtual `apply()` for backward gradient computation |
 | Autograd | Owns Graph + GradientMap; drives backward traversal |
 | Module | Base class for neural network building blocks |
 | Parameter | Wraps a Tensor with gradient and trainable flag |
