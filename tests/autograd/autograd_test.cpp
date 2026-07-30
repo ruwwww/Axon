@@ -1243,6 +1243,61 @@ TEST_CASE("MeanOp forward records graph when requires_grad", "[operation]") {
     REQUIRE(rt.autograd().graph().size() == 1);
 }
 
+TEST_CASE("ReshapeOp backward with non-contiguous grad_out uses TensorIterator", "[autograd][strided]") {
+    Runtime rt;
+    // Forward: create a view with non-contiguous strides, then reshape to flatten
+    auto base = Tensor::zeros(rt, {6});
+    float base_data[] = {10, 20, 30, 40, 50, 60};
+    std::memcpy(base.data<float>(), base_data, 6 * sizeof(float));
+    TensorType view_type({3, 2}, {1, 3}, DType::Float32);
+    Tensor x(view_type, base.storage(), false, 0);
+    x.set_requires_grad(true);
+
+    // Reshape from {3,2} to {6} — forward creates a view
+    auto y = *rt.reshape(x, {6});
+    // loss = sum(y)
+    rt.autograd().backward(rt, y);
+
+    auto& grads = rt.autograd().gradients();
+    REQUIRE(grads.count(x.id()) > 0);
+    Tensor grad_x = grads[x.id()];
+    REQUIRE(grad_x.type().shape() == std::vector<int64_t>({3, 2}));
+
+    // grad_x should be all ones (since loss = sum(y), grad_out = {1,1,1,1,1,1})
+    // and reshape backward just reshapes grad_out back to {3,2}
+    TensorIterator<float> gx_it(grad_x);
+    for (int64_t i = 0; i < 6; ++i) {
+        REQUIRE(gx_it[i] == Catch::Approx(1.0f).epsilon(1e-6));
+    }
+}
+
+TEST_CASE("Composite: transpose -> layernorm backward with non-contiguous grad", "[autograd][strided]") {
+    Runtime rt;
+    // x: {2,3}, transpose -> {3,2}, then layernorm
+    auto x = Tensor::empty(rt, {2, 3});
+    float x_data[] = {1,2,3,4,5,6};
+    std::memcpy(x.data<float>(), x_data, 6 * sizeof(float));
+    x.set_requires_grad(true);
+
+    auto gamma = rt.ones({2});
+    auto beta = rt.zeros({2});
+
+    auto xt = *rt.transpose(x, 0, 1);       // {3,2}, non-contiguous
+    auto y = *rt.layernorm(xt, gamma, beta, 1e-5f);  // {3,2}, contiguous output
+    rt.autograd().backward(rt, y);
+
+    auto& grads = rt.autograd().gradients();
+    REQUIRE(grads.count(x.id()) > 0);
+    Tensor grad_x = grads[x.id()];
+    REQUIRE(grad_x.type().shape() == std::vector<int64_t>({2, 3}));
+
+    // loss = sum(y), gradient is all ones
+    // grad_x should not be NaN or inf
+    for (int64_t i = 0; i < 6; ++i) {
+        REQUIRE(std::isfinite(grad_x.data<float>()[i]));
+    }
+}
+
 TEST_CASE("MeanOp backward broadcasts gradient correctly", "[autograd]") {
     Runtime rt;
     auto a = Tensor::empty(rt, {2, 3});
