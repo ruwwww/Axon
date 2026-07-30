@@ -10,7 +10,6 @@ class Runtime;
 
 struct MSELossOp {
     static Expected<Tensor> forward(Runtime& rt, const Tensor& pred, const Tensor& target);
-    static Expected<void> backward(Runtime& rt, const GraphNode& node, GradientMap& grads);
 };
 
 } // namespace axon

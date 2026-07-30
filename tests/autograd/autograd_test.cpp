@@ -782,9 +782,9 @@ TEST_CASE("Autograd backward populates Tensor::grad on graph inputs", "[autograd
     Tensor c = *rt.matmul(a, b);
     rt.autograd().backward(rt, c);
 
-    auto& node = rt.autograd().graph()[0];
-    REQUIRE(node.inputs[0].has_grad());
-    REQUIRE(node.inputs[1].has_grad());
+    const auto& node = rt.autograd().graph()[0];
+    REQUIRE(node->inputs()[0].has_grad());
+    REQUIRE(node->inputs()[1].has_grad());
 }
 
 TEST_CASE("Gradient accumulation: same input used in two paths accumulates", "[autograd]") {
@@ -807,8 +807,8 @@ TEST_CASE("Gradient accumulation: same input used in two paths accumulates", "[a
 
     const auto& node0 = rt.autograd().graph()[0];
     const auto& node1 = rt.autograd().graph()[1];
-    REQUIRE(node0.inputs[0].id() == x.id());
-    REQUIRE(node1.inputs[0].id() == x.id());
+    REQUIRE(node0->inputs()[0].id() == x.id());
+    REQUIRE(node1->inputs()[0].id() == x.id());
 
     // Backward on y only; second node has no gradient so it's skipped
     auto result = rt.autograd().backward(rt, y);
@@ -836,8 +836,8 @@ TEST_CASE("Graph records nodes in order and iterates in reverse", "[autograd]") 
     Tensor abc = *rt.matmul(ab, c);
 
     REQUIRE(rt.autograd().graph().size() == 2);
-    REQUIRE(rt.autograd().graph()[0].op == OpType::MatMul);
-    REQUIRE(rt.autograd().graph()[1].op == OpType::MatMul);
+    REQUIRE(rt.autograd().graph()[0]->name() == "MatMul");
+    REQUIRE(rt.autograd().graph()[1]->name() == "MatMul");
 }
 
 TEST_CASE("ReshapeOp forward changes shape without copying storage", "[operation]") {
@@ -1018,17 +1018,8 @@ TEST_CASE("TransposeOp backward with non-contiguous grad_out uses correct stride
     REQUIRE(y.type().shape() == std::vector<int64_t>({3, 2}));
     REQUIRE(y.type().strides() == std::vector<int64_t>({1, 3}));
 
-    // Manually construct a GraphNode for the transpose
-    GraphNode node;
-    node.op = OpType::Transpose;
-    node.inputs = {x};
-    node.output = y;
-    node.runtime = &rt;
-    auto meta_type = TensorType::contiguous({2}, DType::Int64);
-    Tensor meta(meta_type, rt.allocator().allocate(meta_type), false);
-    meta.data<int64_t>()[0] = 0;
-    meta.data<int64_t>()[1] = 1;
-    node.op_data = meta;
+    // Manually construct a TransposeNode for the transpose
+    TransposeNode node(x, y, 0, 1);
 
     // Create a non-contiguous grad_out:
     // Base contiguous tensor shape [3,2], strides [2,1], filled 10..15
@@ -1043,8 +1034,8 @@ TEST_CASE("TransposeOp backward with non-contiguous grad_out uses correct stride
     GradientMap grads;
     grads[y.id()] = grad_out;
 
-    // Call backward
-    auto result = TransposeOp::backward(rt, node, grads);
+    // Call apply
+    auto result = node.apply(rt, grads);
     REQUIRE(result);
 
     // Expected: grad has shape [2,3], contiguous, where grad[i][j] = grad_out[j][i]

@@ -23,14 +23,14 @@ None — can start immediately. Priority: P0 (Prerequisite for AVX2 and OpenCL b
 
 ## Acceptance criteria
 
-- [ ] Abstract `Node` base class with virtual `apply(Runtime&, GradientMap&)` method created in `include/axon/autograd/node.h`
-- [ ] Passive `GraphNode` struct and `OpType` enum completely eliminated from the codebase
-- [ ] Each operation (`MatMul`, `ReLU`, `Add`, `Conv2D`, `MaxPool2d`, `AvgPool2d`, `BatchNorm`, `LayerNorm`, `GELU`, `Reshape`, `Transpose`, `Mean`, `CrossEntropyLoss`, `MSELoss`, `L1Loss`) defines its own `Node` subclass
-- [ ] `Graph` stores `std::vector<std::shared_ptr<Node>>`
-- [ ] `Autograd::backward()` traverses `Node` graph and executes `node->apply(runtime, grads)` without enum or switch dispatch
-- [ ] All 190 existing test cases in `axon_tests.exe` pass unchanged
-- [ ] Adding a new operation requires zero edits to autograd core files (`autograd.h` or `autograd.cpp`)
+- [x] Abstract `Node` base class with virtual `apply(Runtime&, GradientMap&)` method created in `include/axon/autograd/node.h`
+- [x] Passive `GraphNode` struct and `OpType` enum completely eliminated from the codebase
+- [x] Each operation (`MatMul`, `ReLU`, `Add`, `Conv2D`, `MaxPool2d`, `AvgPool2d`, `BatchNorm`, `LayerNorm`, `GELU`, `Reshape`, `Transpose`, `Mean`, `CrossEntropyLoss`, `MSELoss`, `L1Loss`) defines its own `Node` subclass
+- [x] `Graph` stores `std::vector<std::shared_ptr<Node>>`
+- [x] `Autograd::backward()` traverses `Node` graph and executes `node->apply(runtime, grads)` without enum or switch dispatch
+- [x] All 190 existing test cases in `axon_tests.exe` pass unchanged
+- [x] Adding a new operation requires zero edits to autograd core files (`autograd.h` or `autograd.cpp`)
 
 ## Status
 
-ready-for-agent
+completed
