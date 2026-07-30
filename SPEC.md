@@ -40,15 +40,15 @@ A minimal, layered C++20 framework with six subsystems: Storage, Tensor, Backend
 - **Runtime** owns the Allocator and the Graph reference.
 - **Allocator** creates Storage blocks. Not a global singleton — owned by Runtime.
 - **Operations** are stateless functors implementing `forward()` and `backward()`.
-- **Operations own graph recording**: `forward()` allocates outputs, calls the CPU backend kernel, then (if `requires_grad`) appends a `GraphNode`.
-- **GraphNode** stores: operation type, input tensors, output tensor, and a non-owning `Runtime*` (stored during forward, used by backward for allocation).
+- **Operations own graph recording**: `forward()` allocates outputs, calls the CPU backend kernel, then (if `requires_grad`) appends a concrete `Node` (`std::shared_ptr<Node>`) to the Graph.
+- **Node** polymorphic base class: defines virtual `apply(Runtime&, GradientMap&)` method. Each operation defines a concrete `Node` subclass holding saved forward inputs/tensors.
 - **Backend** is a namespace `cpu::` of free functions. It receives `Tensor*` pointers. Never accesses the Graph.
 
 ### Autograd
 
 - **Autograd** owns the Graph and GradientMap.
 - **GradientMap** maps TensorId → gradient Tensor during backward. Accumulates in-place.
-- **Backward traversal**: create initial gradient, iterate nodes in reverse, call `op->backward(node, grads)`, accumulate. After traversal, copy gradients to `Tensor::grad`.
+- **Backward traversal**: create initial gradient, iterate nodes in reverse, call `node->apply(runtime, grads)`, accumulate. After traversal, copy gradients to `Tensor::grad`.
 - **Losses** are Operations with fused analytic backward (e.g., log-softmax + NLL fused in CrossEntropy).
 
 ### Modules and Parameters

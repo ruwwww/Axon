@@ -8,6 +8,6 @@ This is a deviation from the interface shown in ticket 02, which showed plain `T
 
 ## Backward skips nodes without a gradient in the map
 
-During backward traversal, if a GraphNode's output has no entry in the GradientMap (because it is not reachable from the loss), the node is silently skipped rather than returning an error. This enables correct partial-graph backward: when the graph branches and backward is called on one branch, the other branch is harmless to skip.
+During backward traversal, if a Node's output has no entry in the GradientMap (because it is not reachable from the loss), the node is silently skipped rather than returning an error. This enables correct partial-graph backward: when the graph branches and backward is called on one branch, the other branch is harmless to skip.
 
 The original implementation returned an error, which would incorrectly reject valid partial traversals.

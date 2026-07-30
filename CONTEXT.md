@@ -25,16 +25,16 @@ The memory owner. A reference-counted block of bytes holding the raw tensor data
 A description of the low-precision encoding scheme applied to a Storage block (block size, packing, scales, decode rule). Belongs to Storage, not Tensor.
 
 **Graph**:
-A linear sequence of operation nodes, built during forward execution, consumed by autograd's backward pass. No optimization, no scheduling, no compiler.
+A linear sequence of operation nodes (`std::shared_ptr<Node>`), built during forward execution, consumed by autograd's backward pass. No optimization, no scheduling, no compiler.
 
-**GraphNode**:
-A single entry in the Graph. Recorded by an operation's `forward()` when `requires_grad` is enabled. Contains the operation type, input tensors, output tensor, and a non-owning `Runtime*` pointer (stored during forward, used by backward for allocation).
+**Node**:
+Abstract base class for autograd graph nodes (`std::shared_ptr<Node>`). Created by an operation's `forward()` when `requires_grad` is enabled and appended to the Graph. Each operation defines a concrete `Node` subclass (e.g., `MatMulNode`, `ReLUNode`) holding saved forward tensors and implementing `apply(runtime, grads)` for backward gradient computation.
 
 **Operation**:
-A stateless functor implementing `forward()` and `backward()`. `forward()` allocates outputs, calls the backend kernel, and (if `requires_grad`) appends a GraphNode. Operations own graph recording, not the Runtime.
+A stateless functor implementing `forward()` and `backward()`. `forward()` allocates outputs, calls the backend kernel, and (if `requires_grad`) creates a concrete `Node` and appends it to the Graph. Operations own graph recording, not the Runtime.
 
 **Autograd**:
-Owns the Graph and GradientMap. Drives backward traversal — creates initial gradient, iterates nodes in reverse, calls each operation's `backward()`, and accumulates results in the GradientMap. After traversal, populates each tensor's `.grad`.
+Owns the Graph and GradientMap. Drives backward traversal — creates initial gradient, iterates nodes in reverse, calls each node's `apply(runtime, grads)`, and accumulates results in the GradientMap. After traversal, populates each tensor's `.grad`.
 
 **GradientMap**:
 Working storage during backward pass. Maps TensorId → gradient Tensor. Accumulates gradients in-place. Gradients are copied to Tensor::grad only after backward completes.
