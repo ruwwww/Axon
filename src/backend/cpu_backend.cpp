@@ -21,8 +21,8 @@ static Expected<void> elementwise_op(Tensor& out, const Tensor& a, const Tensor&
     if (!check) return check.error();
 
     if (a.type().dtype() == DType::Float32 && b.type().dtype() == DType::Float32 && out.type().dtype() == DType::Float32) {
-        const TensorIterator<float> a_it(a);
-        const TensorIterator<float> b_it(b);
+        TensorIterator<const float> a_it(a);
+        TensorIterator<const float> b_it(b);
         TensorIterator<float> out_it(out);
         auto n = a.type().numel();
         for (int64_t i = 0; i < n; ++i) {
@@ -73,8 +73,8 @@ Expected<void> matmul(Tensor& out, const Tensor& a, const Tensor& b) {
         return Error{"cpu::matmul: only Float32 supported"};
     }
 
-    const TensorIterator<float> a_it(a);
-    const TensorIterator<float> b_it(b);
+    TensorIterator<const float> a_it(a);
+    TensorIterator<const float> b_it(b);
     TensorIterator<float> out_it(out);
 
     for (int64_t i = 0; i < M; ++i) {
@@ -98,7 +98,7 @@ Expected<void> relu(Tensor& out, const Tensor& x) {
         return Error{"cpu::relu: only Float32 supported"};
     }
 
-    const TensorIterator<float> x_it(x);
+    TensorIterator<const float> x_it(x);
     TensorIterator<float> out_it(out);
     auto n = x.type().numel();
 
@@ -117,7 +117,7 @@ Expected<void> gelu(Tensor& out, const Tensor& x) {
         return Error{"cpu::gelu: only Float32 supported"};
     }
 
-    const TensorIterator<float> x_it(x);
+    TensorIterator<const float> x_it(x);
     TensorIterator<float> out_it(out);
     auto n = x.type().numel();
     constexpr float alpha = 0.79788456f;  // sqrt(2/pi)
@@ -145,7 +145,7 @@ Expected<void> log_softmax(Tensor& out, const Tensor& x) {
     int64_t n_rows = shape.size() == 2 ? shape[0] : 1;
     int64_t n_cols = shape.size() == 2 ? shape[1] : shape[0];
 
-    const TensorIterator<float> x_it(x);
+    TensorIterator<const float> x_it(x);
     TensorIterator<float> out_it(out);
 
     for (int64_t i = 0; i < n_rows; ++i) {
@@ -181,7 +181,7 @@ Expected<void> softmax(Tensor& out, const Tensor& x) {
     int64_t n_rows = shape.size() == 2 ? shape[0] : 1;
     int64_t n_cols = shape.size() == 2 ? shape[1] : shape[0];
 
-    const TensorIterator<float> x_it(x);
+    TensorIterator<const float> x_it(x);
     TensorIterator<float> out_it(out);
 
     for (int64_t i = 0; i < n_rows; ++i) {
@@ -224,8 +224,8 @@ Expected<void> conv2d(Tensor& out, const Tensor& input, const Tensor& weight,
     if (C != IC) return Error{"cpu::conv2d: input channels != weight in_channels"};
     if (out_shape[0] != N || out_shape[1] != OC) return Error{"cpu::conv2d: output shape mismatch"};
 
-    const TensorIterator<float> inp_it(input);
-    const TensorIterator<float> w_it(weight);
+    TensorIterator<const float> inp_it(input);
+    TensorIterator<const float> w_it(weight);
     TensorIterator<float> o_it(out);
 
     for (int64_t n = 0; n < N; ++n) {
@@ -342,9 +342,9 @@ Expected<void> batchnorm(Tensor& out, const Tensor& input,
     for (size_t i = 2; i < in_shape.size(); ++i) spatial *= in_shape[i];
     int64_t num_elements = N * spatial;
 
-    const TensorIterator<float> inp_it(input);
-    const TensorIterator<float> g_it(gamma);
-    const TensorIterator<float> b_it(beta);
+    TensorIterator<const float> inp_it(input);
+    TensorIterator<const float> g_it(gamma);
+    TensorIterator<const float> b_it(beta);
     TensorIterator<float> rm_it(running_mean);
     TensorIterator<float> rv_it(running_var);
     TensorIterator<float> o_it(out);
@@ -419,9 +419,9 @@ Expected<void> layernorm(Tensor& out, const Tensor& input,
     int64_t D = 1;
     for (size_t i = 1; i < in_shape.size(); ++i) D *= in_shape[i];
 
-    const TensorIterator<float> inp_it(input);
-    const TensorIterator<float> g_it(gamma);
-    const TensorIterator<float> b_it(beta);
+    TensorIterator<const float> inp_it(input);
+    TensorIterator<const float> g_it(gamma);
+    TensorIterator<const float> b_it(beta);
     TensorIterator<float> o_it(out);
 
     for (int64_t n = 0; n < N; ++n) {
@@ -459,12 +459,12 @@ Expected<void> reduce_mean(Tensor& out, const Tensor& input, const std::vector<i
         reduction_size *= shape[d];
     }
 
-    const TensorIterator<float> inp_it(input);
+    TensorIterator<const float> inp_it(input);
     TensorIterator<float> o_it(out);
     auto numel = input.type().numel();
     auto out_numel = out.type().numel();
 
-    for (int64_t i = 0; i < out_numel; ++i) o_it[i] = 0.0f;
+    std::fill(out.data<float>(), out.data<float>() + out_numel, 0.0f);
 
     std::vector<int64_t> idx(ndim, 0);
     for (int64_t flat = 0; flat < numel; ++flat) {

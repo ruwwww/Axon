@@ -5,6 +5,9 @@
 #include "axon/backend/cpu_backend.h"
 #include "axon/runtime/runtime.h"
 #include "axon/tensor/tensor_iterator.h"
+#include "axon/nn/mse.h"
+#include "axon/nn/cross_entropy.h"
+#include "axon/nn/l1_loss.h"
 
 using namespace axon;
 
@@ -280,16 +283,7 @@ TEST_CASE("ReLUOp backward with non-contiguous input uses correct strides", "[au
         dx_it[i] = x_it[i] > 0.0f ? go_it[i] : 0.0f;
     }
 
-    // Expected: element-wise relu derivative
-    // x values via stride [1,3]: [-2, -1, 0, 1, 2, 3] at offsets [0,3,1,4,2,5]
-    // logical[0,0]=base[0]=-2 -> 0*1=0
-    // logical[0,1]=base[3]=1  -> 1*3=3
-    // logical[1,0]=base[1]=-1 -> 0*1=0 wait, flat 2 -> coord (1,0) -> offset 1*1+0*3=1
-    // Actually let's check: flat 2 = base[1] = -1
-    // flat 3 = coord (1,1) = base[4] = 1
-    // flat 4 = coord (2,0) = base[2] = 0
-    // flat 5 = coord (2,1) = base[5] = 3
-    float expected[] = {0, 2, 0, 4, 0, 6}; // x>0 ? go : 0
+    float expected[] = {0, 2, 0, 4, 0, 6};
     for (int64_t i = 0; i < n; ++i) {
         REQUIRE(dx.data<float>()[i] == Catch::Approx(expected[i]));
     }
@@ -498,14 +492,8 @@ TEST_CASE("AddOp backward bias-sum with non-contiguous grad_out uses correct str
     auto go_base = Tensor::zeros(rt, {8});
     float go_data[] = {10, 20, 30, 40, 50, 60};
     std::memcpy(go_base.data<float>(), go_data, 6 * sizeof(float));
-    TensorType go_view_type({3, 2}, {2, 1}, DType::Float32);
-    // This view type has stride {2,1} making it contiguous with a gap -> non-contiguous
-    // Actually {3,2} with strides {2,1} is contiguous since last stride=1, previous stride=2*1=2. Yes contiguous.
-
-    // Let's use shape {2,3} instead for the non-contiguous view
-    // grad_out shape [2,3] with strides [1,2] -> non-contiguous
-    TensorType go_view_type2({2, 3}, {1, 2}, DType::Float32);
-    Tensor grad_out(go_view_type2, go_base.storage(), false);
+    TensorType go_view_type({2, 3}, {1, 2}, DType::Float32);
+    Tensor grad_out(go_view_type, go_base.storage(), false);
 
     // Bias sum C=3
     int64_t M = 2, N = 3;
@@ -546,22 +534,10 @@ TEST_CASE("MatMulOp backward with non-contiguous grad_out uses correct strides",
 
     // grad_out as non-contiguous view
     auto go_base = Tensor::zeros(rt, {8});
-    float go_data[] = {1, 0, 0, 1, 0, 0};  // identity-like grad_out for {2,3}
+    float go_data[] = {1, 2, 3, 4, 5, 6};
     std::memcpy(go_base.data<float>(), go_data, 6 * sizeof(float));
-    // Actually we need shape {M, N} = {2, 2}
-    // Let's use a different base
-    auto go_base2 = Tensor::zeros(rt, {6});
-    float go_data2[] = {1, 2, 3, 4, 5, 6};
-    std::memcpy(go_base2.data<float>(), go_data2, 6 * sizeof(float));
-    TensorType go_view_type({2, 2}, {2, 1}, DType::Float32);
-    // {2,2} strides {2,1}: last stride=1, expected[1]=2 -> actual[1]=1 != 2, so non-contiguous
-    // Actually expected: strides[d-1] should be 1, strides[d-2] = shape[d-1]*strides[d-1]
-    // For {2,2}: if strides={2,1}, last=1=expected ✓, prev=2, expected=2*1=2 ✓ -> contiguous!
-    
-    // Let me use strides {1,2} instead
-    TensorType go_view_type2({2, 2}, {1, 2}, DType::Float32);
-    // {2,2} strides {1,2}: last=2 != 1 -> non-contiguous ✓
-    Tensor grad_out(go_view_type2, go_base2.storage(), false);
+    TensorType go_view_type({2, 2}, {1, 2}, DType::Float32);
+    Tensor grad_out(go_view_type, go_base.storage(), false);
 
     // Compute da = grad_out @ b^T  (M x K)
     auto da_type = TensorType::contiguous({M, K}, DType::Float32);
@@ -633,22 +609,7 @@ TEST_CASE("Composite: transpose -> relu backward with non-contiguous grad uses c
     Tensor grad_x = grads[x.id()];
     REQUIRE(grad_x.type().shape() == std::vector<int64_t>({2, 3}));
 
-    // loss = sum(y) -> upstream gradient is all ones
-    // dx[i][j] = relu'(x[i][j]) * dy[j][i]
-    // Since dy = d(loss)/d(y) = 1 for each y element:
-    // dx[0,0] = relu'(-1) = 0
-    // dx[0,1] = relu'(2) = 1 * 1 = 1  (but x[0,1]=2 >0, so dy=1)
-    // Wait, I need to think more carefully.
-    // y = relu(xt) where xt[i][j] = x[j][i]
-    // loss = sum(y) = sum over i,j of relu(xt[i][j])
-    // d(loss)/d(x[j][i]) = relu'(xt[i][j]) * 1 = relu'(x[j][i])
-    // So dx[j,i] = relu'(x[j,i])
-    // dx[0,0] = relu'(x[0,0]) = relu'(-1) = 0
-    // dx[0,1] = relu'(x[0,1]) = relu'(2) = 1
-    // dx[0,2] = relu'(x[0,2]) = relu'(-3) = 0
-    // dx[1,0] = relu'(x[1,0]) = relu'(4) = 1
-    // dx[1,1] = relu'(x[1,1]) = relu'(-5) = 0
-    // dx[1,2] = relu'(x[1,2]) = relu'(6) = 1
+    // dx[j,i] = relu'(x[j,i])  (loss = sum(y))
     float expected[] = {0, 1, 0, 1, 0, 1};
     for (int64_t i = 0; i < 6; ++i) {
         REQUIRE(grad_x.data<float>()[i] == Catch::Approx(expected[i]).epsilon(1e-6));
@@ -1316,4 +1277,63 @@ TEST_CASE("MeanOp backward broadcasts gradient correctly", "[autograd]") {
     auto& grads = rt.autograd().gradients();
     REQUIRE(grads.count(a.id()) > 0);
     REQUIRE(grads[a.id()].type().shape() == std::vector<int64_t>({2, 3}));
+}
+
+TEST_CASE("MSELossOp forward with non-contiguous inputs uses TensorIterator", "[autograd][strided]") {
+    Runtime rt;
+    auto pred_base = Tensor::zeros(rt, {6});
+    float* pb = pred_base.data<float>();
+    pb[0]=0; pb[3]=1; pb[1]=2; pb[4]=3; pb[2]=4; pb[5]=5;
+    TensorType view_type({3, 2}, {1, 3}, DType::Float32);
+    Tensor pred(view_type, pred_base.storage(), false);
+
+    auto target_base = Tensor::zeros(rt, {6});
+    float* tb = target_base.data<float>();
+    tb[0]=5; tb[3]=4; tb[1]=3; tb[4]=2; tb[2]=1; tb[5]=0;
+    Tensor target(view_type, target_base.storage(), false);
+
+    auto loss = MSELossOp::forward(rt, pred, target);
+    REQUIRE(loss);
+    float val = loss.value().data<float>()[0];
+    float expected = 70.0f / 6.0f;
+    REQUIRE(val == Catch::Approx(expected).epsilon(1e-6));
+}
+
+TEST_CASE("L1LossOp forward with non-contiguous inputs uses TensorIterator", "[autograd][strided]") {
+    Runtime rt;
+    auto pred_base = Tensor::zeros(rt, {6});
+    float* pb = pred_base.data<float>();
+    pb[0]=0; pb[3]=1; pb[1]=2; pb[4]=3; pb[2]=4; pb[5]=5;
+    TensorType view_type({3, 2}, {1, 3}, DType::Float32);
+    Tensor pred(view_type, pred_base.storage(), false);
+
+    auto target_base = Tensor::zeros(rt, {6});
+    float* tb = target_base.data<float>();
+    tb[0]=5; tb[3]=4; tb[1]=3; tb[4]=2; tb[2]=1; tb[5]=0;
+    Tensor target(view_type, target_base.storage(), false);
+
+    auto loss = L1LossOp::forward(rt, pred, target);
+    REQUIRE(loss);
+    float val = loss.value().data<float>()[0];
+    REQUIRE(val == Catch::Approx(3.0f).epsilon(1e-6));
+}
+
+TEST_CASE("CrossEntropyLossOp forward with non-contiguous logits uses TensorIterator", "[autograd][strided]") {
+    Runtime rt;
+    auto logits_base = Tensor::zeros(rt, {6});
+    float* lb = logits_base.data<float>();
+    lb[0] = 1.0f; lb[2] = 2.0f; lb[4] = 0.5f;
+    lb[1] = 0.0f; lb[3] = 1.0f; lb[5] = 3.0f;
+    TensorType view_type({2, 3}, {1, 2}, DType::Float32);
+    Tensor logits(view_type, logits_base.storage(), false);
+
+    Tensor targets = Tensor::empty(rt, {2});
+    targets.data<int64_t>()[0] = 1;
+    targets.data<int64_t>()[1] = 2;
+
+    auto loss = CrossEntropyLossOp::forward(rt, logits, targets);
+    REQUIRE(loss);
+    float val = loss.value().data<float>()[0];
+    REQUIRE(std::isfinite(val));
+    REQUIRE(val > 0.0f);
 }

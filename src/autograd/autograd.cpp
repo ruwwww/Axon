@@ -305,12 +305,12 @@ Expected<Tensor> CrossEntropyLossOp::forward(Runtime& rt, const Tensor& logits, 
     Tensor log_softmax_out(ls_type, rt.allocator().allocate(ls_type), false);
     RETURN_IF_ERROR(cpu::log_softmax(log_softmax_out, logits));
 
-    auto* ls_ptr = log_softmax_out.data<const float>();
-    auto* t_ptr = targets.data<const int64_t>();
+    TensorIterator<const float> ls_it(log_softmax_out);
+    TensorIterator<const int64_t> t_it(targets);
     float loss_val = 0.0f;
 
     for (int64_t i = 0; i < N; ++i) {
-        loss_val -= ls_ptr[i * C + t_ptr[i]];
+        loss_val -= ls_it[i * C + t_it[i]];
     }
     loss.data<float>()[0] = loss_val / static_cast<float>(N);
 
@@ -378,13 +378,13 @@ Expected<Tensor> MSELossOp::forward(Runtime& rt, const Tensor& pred, const Tenso
     bool need_grad = pred.requires_grad();
     auto loss = Tensor(loss_type, rt.allocator().allocate(loss_type), need_grad);
 
-    auto* p_ptr = pred.data<const float>();
-    auto* t_ptr = target.data<const float>();
+    TensorIterator<const float> p_it(pred);
+    TensorIterator<const float> t_it(target);
     auto n = pred.type().numel();
 
     float sum = 0.0f;
     for (int64_t i = 0; i < n; ++i) {
-        float diff = p_ptr[i] - t_ptr[i];
+        float diff = p_it[i] - t_it[i];
         sum += diff * diff;
     }
     loss.data<float>()[0] = sum / static_cast<float>(n);
@@ -445,13 +445,13 @@ Expected<Tensor> L1LossOp::forward(Runtime& rt, const Tensor& pred, const Tensor
     bool need_grad = pred.requires_grad();
     auto loss = Tensor(loss_type, rt.allocator().allocate(loss_type), need_grad);
 
-    auto* p_ptr = pred.data<const float>();
-    auto* t_ptr = target.data<const float>();
+    TensorIterator<const float> p_it(pred);
+    TensorIterator<const float> t_it(target);
     auto n = pred.type().numel();
 
     float sum = 0.0f;
     for (int64_t i = 0; i < n; ++i) {
-        sum += std::abs(p_ptr[i] - t_ptr[i]);
+        sum += std::abs(p_it[i] - t_it[i]);
     }
     loss.data<float>()[0] = sum / static_cast<float>(n);
 
