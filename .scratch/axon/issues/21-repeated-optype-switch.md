@@ -1,12 +1,21 @@
-# 21 — Polymorphic Autograd Node & OpRegistry Dispatch
+# 21 — Polymorphic Node DAG Autograd Engine (PyTorch Autograd Model)
 
 ## What to build
 
-Replace the 15-case `switch(node.op)` statement in `src/autograd/autograd.cpp` and the static `OpType` enum dependency with a polymorphic `OpRegistry` / `Node` dispatch system.
+Replace the passive `GraphNode` vector, `OpType` enum, and the 15-case `switch(node.op)` in `Autograd::backward()` with a **Polymorphic `Node` DAG Autograd Engine** matching PyTorch's `torch::autograd::Node` model.
 
-Each operation registers its backward evaluation handler (`Node` or `std::function<Expected<void>(Runtime&, const GraphNode&, GradientMap&)>`) into a central `OpRegistry` map. `Autograd::backward()` queries the registry to execute backward passes without needing a hardcoded switch statement or modifying `autograd.cpp` for every new op.
+Introduce an abstract `Node` base class in `include/axon/autograd/node.h`:
+```cpp
+class Node {
+public:
+    virtual ~Node() = default;
+    virtual Expected<void> apply(Runtime& runtime, GradientMap& grads) = 0;
+};
+```
 
-This satisfies the Open-Closed Principle and establishes the foundational seam required for multi-backend execution (`Ticket #22` AVX2 SIMD and `Ticket #23` OpenCL iGPU).
+Each operation defines its own concrete `Node` subclass (e.g. `MatMulNode`, `ReLUNode`, `Conv2DNode`) holding its forward inputs/saved tensors. During forward pass, operations instantiate their concrete `Node` and push `std::shared_ptr<Node>` into the `Graph` DAG.
+
+`Autograd::backward()` iterates the `Graph` nodes in reverse and calls `node->apply(runtime, grads)`. This completely eliminates the `OpType` enum, `GraphNode` struct, and central `switch` statements across the codebase.
 
 ## Blocked by
 
@@ -14,11 +23,13 @@ None — can start immediately. Priority: P0 (Prerequisite for AVX2 and OpenCL b
 
 ## Acceptance criteria
 
-- [ ] `OpRegistry` class introduced in `include/axon/autograd/op_registry.h`
-- [ ] 15-case `switch(node.op)` in `Autograd::backward()` removed and replaced with dynamic `OpRegistry` lookup
-- [ ] All 15 existing operations (`MatMul`, `ReLU`, `Add`, `Conv2D`, `GELU`, etc.) register their backward handlers in `OpRegistry`
+- [ ] Abstract `Node` base class with virtual `apply(Runtime&, GradientMap&)` method created in `include/axon/autograd/node.h`
+- [ ] Passive `GraphNode` struct and `OpType` enum completely eliminated from the codebase
+- [ ] Each operation (`MatMul`, `ReLU`, `Add`, `Conv2D`, `MaxPool2d`, `AvgPool2d`, `BatchNorm`, `LayerNorm`, `GELU`, `Reshape`, `Transpose`, `Mean`, `CrossEntropyLoss`, `MSELoss`, `L1Loss`) defines its own `Node` subclass
+- [ ] `Graph` stores `std::vector<std::shared_ptr<Node>>`
+- [ ] `Autograd::backward()` traverses `Node` graph and executes `node->apply(runtime, grads)` without enum or switch dispatch
 - [ ] All 190 existing test cases in `axon_tests.exe` pass unchanged
-- [ ] Adding a new operation can be done in its own file without editing `autograd.h` or `autograd.cpp`
+- [ ] Adding a new operation requires zero edits to autograd core files (`autograd.h` or `autograd.cpp`)
 
 ## Status
 
