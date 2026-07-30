@@ -2,6 +2,7 @@
 #include <catch2/catch_approx.hpp>
 #include <cstring>
 #include <cmath>
+#include "axon/autograd/nodes.h"
 #include "axon/backend/cpu_backend.h"
 #include "axon/runtime/runtime.h"
 #include "axon/tensor/tensor_iterator.h"

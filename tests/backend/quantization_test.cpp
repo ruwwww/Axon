@@ -55,7 +55,7 @@ static void test_kquant_roundtrip(QuantFormat fmt, size_t count, float margin, i
     REQUIRE(qsize == expected_qsize);
     auto qtype = TensorType::contiguous({static_cast<int64_t>(count)}, DType::Float32, Device::CPU);
     StoragePtr qstorage = std::make_shared<Storage>(qsize);
-    qstorage->quant = QuantizationDescriptor{fmt, block_size};
+    qstorage->quant = QuantizationDescriptor{fmt, static_cast<size_t>(block_size)};
     Tensor quantized(qtype, qstorage, false);
 
     auto q_result = cpu::quantize(quantized, src, fmt);
@@ -110,7 +110,7 @@ static void test_kquant_matmul(QuantFormat fmt, int64_t M, int64_t K, int64_t N,
 
     size_t a_qsize = cpu::quantized_size_2d(M, K, fmt);
     StoragePtr a_qstorage = std::make_shared<Storage>(a_qsize);
-    a_qstorage->quant = QuantizationDescriptor{fmt, qblock};
+    a_qstorage->quant = QuantizationDescriptor{fmt, static_cast<size_t>(qblock)};
     Tensor a_q(TensorType::contiguous({M, K}, DType::Float32, Device::CPU), a_qstorage, false);
     REQUIRE(cpu::quantize(a_q, a_f32, fmt));
 

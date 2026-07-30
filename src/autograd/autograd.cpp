@@ -1,4 +1,5 @@
 #include "axon/autograd/autograd.h"
+#include "axon/autograd/nodes.h"
 #include "axon/backend/cpu_backend.h"
 #include "axon/nn/cross_entropy.h"
 #include "axon/nn/mse.h"
@@ -61,18 +62,18 @@ Expected<void> MatMulNode::apply(Runtime& rt, GradientMap& grads) {
     }
     Tensor grad_out = grad_it->second;
 
-    auto M = a_.type().shape()[0];
-    auto K = a_.type().shape()[1];
-    auto N = b_.type().shape()[1];
+    auto M = inputs_[0].type().shape()[0];
+    auto K = inputs_[0].type().shape()[1];
+    auto N = inputs_[1].type().shape()[1];
 
     // da = grad_out @ b^T  (M x K)
     {
-        auto da_type = TensorType::contiguous({M, K}, a_.type().dtype());
+        auto da_type = TensorType::contiguous({M, K}, inputs_[0].type().dtype());
         Tensor da(da_type, rt.allocator().allocate(da_type), false);
         auto* da_ptr = da.data<float>();
 
         TensorIterator<const float> go_it(grad_out);
-        TensorIterator<const float> b_it(b_);
+        TensorIterator<const float> b_it(inputs_[1]);
 
         for (int64_t i = 0; i < M; ++i) {
             for (int64_t j = 0; j < K; ++j) {
@@ -84,21 +85,21 @@ Expected<void> MatMulNode::apply(Runtime& rt, GradientMap& grads) {
             }
         }
 
-        auto it = grads.find(a_.id());
+        auto it = grads.find(inputs_[0].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, da);
         } else {
-            grads[a_.id()] = da;
+            grads[inputs_[0].id()] = da;
         }
     }
 
     // db = a^T @ grad_out  (K x N)
     {
-        auto db_type = TensorType::contiguous({K, N}, b_.type().dtype());
+        auto db_type = TensorType::contiguous({K, N}, inputs_[1].type().dtype());
         Tensor db(db_type, rt.allocator().allocate(db_type), false);
         auto* db_ptr = db.data<float>();
 
-        TensorIterator<const float> a_it(a_);
+        TensorIterator<const float> a_it(inputs_[0]);
         TensorIterator<const float> go_it(grad_out);
 
         for (int64_t i = 0; i < K; ++i) {
@@ -111,11 +112,11 @@ Expected<void> MatMulNode::apply(Runtime& rt, GradientMap& grads) {
             }
         }
 
-        auto it = grads.find(b_.id());
+        auto it = grads.find(inputs_[1].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, db);
         } else {
-            grads[b_.id()] = db;
+            grads[inputs_[1].id()] = db;
         }
     }
 
@@ -144,23 +145,23 @@ Expected<void> ReLUNode::apply(Runtime& rt, GradientMap& grads) {
     }
     Tensor grad_out = grad_it->second;
 
-    auto dx_type = TensorType::contiguous(x_.type().shape(), x_.type().dtype());
+    auto dx_type = TensorType::contiguous(inputs_[0].type().shape(), inputs_[0].type().dtype());
     Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
 
-    TensorIterator<const float> x_it(x_);
+    TensorIterator<const float> x_it(inputs_[0]);
     TensorIterator<const float> go_it(grad_out);
     TensorIterator<float> dx_it(dx);
-    auto n = x_.type().numel();
+    auto n = inputs_[0].type().numel();
 
     for (int64_t i = 0; i < n; ++i) {
         dx_it[i] = x_it[i] > 0.0f ? go_it[i] : 0.0f;
     }
 
-    auto it = grads.find(x_.id());
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, dx);
     } else {
-        grads[x_.id()] = dx;
+        grads[inputs_[0].id()] = dx;
     }
 
     return {};
@@ -214,19 +215,19 @@ Expected<void> AddNode::apply(Runtime& rt, GradientMap& grads) {
     Tensor grad_out = grad_it->second;
 
     {
-        auto it = grads.find(a_.id());
+        auto it = grads.find(inputs_[0].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, grad_out);
         } else {
-            grads[a_.id()] = grad_out;
+            grads[inputs_[0].id()] = grad_out;
         }
     }
 
     {
-        if (b_.type().shape().size() == 1 && grad_out.type().shape().size() == 2) {
+        if (inputs_[1].type().shape().size() == 1 && grad_out.type().shape().size() == 2) {
             auto M = grad_out.type().shape()[0];
             auto N = grad_out.type().shape()[1];
-            auto db_type = TensorType::contiguous(b_.type().shape(), b_.type().dtype());
+            auto db_type = TensorType::contiguous(inputs_[1].type().shape(), inputs_[1].type().dtype());
             Tensor db(db_type, rt.allocator().allocate(db_type), false);
             auto* db_ptr = db.data<float>();
 
@@ -239,18 +240,18 @@ Expected<void> AddNode::apply(Runtime& rt, GradientMap& grads) {
                 db_ptr[j] = sum;
             }
 
-            auto it = grads.find(b_.id());
+            auto it = grads.find(inputs_[1].id());
             if (it != grads.end()) {
                 cpu::add(it->second, it->second, db);
             } else {
-                grads[b_.id()] = db;
+                grads[inputs_[1].id()] = db;
             }
         } else {
-            auto it = grads.find(b_.id());
+            auto it = grads.find(inputs_[1].id());
             if (it != grads.end()) {
                 cpu::add(it->second, it->second, grad_out);
             } else {
-                grads[b_.id()] = grad_out;
+                grads[inputs_[1].id()] = grad_out;
             }
         }
     }
@@ -299,15 +300,15 @@ Expected<void> CrossEntropyLossNode::apply(Runtime& rt, GradientMap& grads) {
         return {};
     }
 
-    auto N = logits_.type().shape()[0];
-    auto C = logits_.type().shape()[1];
+    auto N = inputs_[0].type().shape()[0];
+    auto C = inputs_[0].type().shape()[1];
     float inv_N = 1.0f / static_cast<float>(N);
 
-    auto dlogits_type = TensorType::contiguous({N, C}, logits_.type().dtype());
+    auto dlogits_type = TensorType::contiguous({N, C}, inputs_[0].type().dtype());
     Tensor dlogits(dlogits_type, rt.allocator().allocate(dlogits_type), false);
 
     TensorIterator<const float> ls_it(log_softmax_out_);
-    TensorIterator<const int64_t> t_it(targets_);
+    TensorIterator<const int64_t> t_it(inputs_[1]);
     TensorIterator<float> d_it(dlogits);
 
     for (int64_t i = 0; i < N; ++i) {
@@ -317,11 +318,11 @@ Expected<void> CrossEntropyLossNode::apply(Runtime& rt, GradientMap& grads) {
         }
     }
 
-    auto it = grads.find(logits_.id());
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, dlogits);
     } else {
-        grads[logits_.id()] = dlogits;
+        grads[inputs_[0].id()] = dlogits;
     }
 
     return {};
@@ -362,25 +363,25 @@ Expected<void> MSELossNode::apply(Runtime& rt, GradientMap& grads) {
         return {};
     }
 
-    auto n = pred_.type().numel();
+    auto n = inputs_[0].type().numel();
     float scale = 2.0f / static_cast<float>(n);
 
-    auto dpred_type = TensorType::contiguous(pred_.type().shape(), pred_.type().dtype());
+    auto dpred_type = TensorType::contiguous(inputs_[0].type().shape(), inputs_[0].type().dtype());
     Tensor dpred(dpred_type, rt.allocator().allocate(dpred_type), false);
 
-    TensorIterator<const float> p_it(pred_);
-    TensorIterator<const float> t_it(target_);
+    TensorIterator<const float> p_it(inputs_[0]);
+    TensorIterator<const float> t_it(inputs_[1]);
     TensorIterator<float> d_it(dpred);
 
     for (int64_t i = 0; i < n; ++i) {
         d_it[i] = scale * (p_it[i] - t_it[i]);
     }
 
-    auto it = grads.find(pred_.id());
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, dpred);
     } else {
-        grads[pred_.id()] = dpred;
+        grads[inputs_[0].id()] = dpred;
     }
 
     return {};
@@ -420,14 +421,14 @@ Expected<void> L1LossNode::apply(Runtime& rt, GradientMap& grads) {
         return {};
     }
 
-    auto n = pred_.type().numel();
+    auto n = inputs_[0].type().numel();
     float scale = 1.0f / static_cast<float>(n);
 
-    auto dpred_type = TensorType::contiguous(pred_.type().shape(), pred_.type().dtype());
+    auto dpred_type = TensorType::contiguous(inputs_[0].type().shape(), inputs_[0].type().dtype());
     Tensor dpred(dpred_type, rt.allocator().allocate(dpred_type), false);
 
-    TensorIterator<const float> p_it(pred_);
-    TensorIterator<const float> t_it(target_);
+    TensorIterator<const float> p_it(inputs_[0]);
+    TensorIterator<const float> t_it(inputs_[1]);
     TensorIterator<float> d_it(dpred);
 
     for (int64_t i = 0; i < n; ++i) {
@@ -441,11 +442,11 @@ Expected<void> L1LossNode::apply(Runtime& rt, GradientMap& grads) {
         }
     }
 
-    auto it = grads.find(pred_.id());
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, dpred);
     } else {
-        grads[pred_.id()] = dpred;
+        grads[inputs_[0].id()] = dpred;
     }
 
     return {};
@@ -502,19 +503,19 @@ Expected<void> Conv2DNode::apply(Runtime& rt, GradientMap& grads) {
     if (grad_it == grads.end()) return {};
     Tensor grad_out = grad_it->second;
 
-    const auto& in_shape = input_.type().shape();
-    const auto& w_shape = weight_.type().shape();
+    const auto& in_shape = inputs_[0].type().shape();
+    const auto& w_shape = inputs_[1].type().shape();
     auto N = in_shape[0], C = in_shape[1], H = in_shape[2], W = in_shape[3];
     auto OC = w_shape[0], IC = w_shape[1], KH = w_shape[2], KW = w_shape[3];
     auto OH = grad_out.type().shape()[2], OW = grad_out.type().shape()[3];
 
     // d_input: conv transpose of grad_out with weight
-    if (input_.requires_grad()) {
-        auto di_type = TensorType::contiguous({N, C, H, W}, input_.type().dtype());
+    if (inputs_[0].requires_grad()) {
+        auto di_type = TensorType::contiguous({N, C, H, W}, inputs_[0].type().dtype());
         Tensor di(di_type, rt.allocator().allocate(di_type), false);
         TensorIterator<float> di_it(di);
         TensorIterator<const float> go_it(grad_out);
-        TensorIterator<const float> w_it(weight_);
+        TensorIterator<const float> w_it(inputs_[1]);
 
         for (int64_t n = 0; n < N; ++n) {
             for (int64_t c = 0; c < C; ++c) {
@@ -543,20 +544,20 @@ Expected<void> Conv2DNode::apply(Runtime& rt, GradientMap& grads) {
             }
         }
 
-        auto it = grads.find(input_.id());
+        auto it = grads.find(inputs_[0].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, di);
         } else {
-            grads[input_.id()] = di;
+            grads[inputs_[0].id()] = di;
         }
     }
 
     // d_weight
-    if (weight_.requires_grad()) {
-        auto dw_type = TensorType::contiguous({OC, IC, KH, KW}, weight_.type().dtype());
+    if (inputs_[1].requires_grad()) {
+        auto dw_type = TensorType::contiguous({OC, IC, KH, KW}, inputs_[1].type().dtype());
         Tensor dw(dw_type, rt.allocator().allocate(dw_type), false);
         TensorIterator<float> dw_it(dw);
-        TensorIterator<const float> inp_it(input_);
+        TensorIterator<const float> inp_it(inputs_[0]);
         TensorIterator<const float> go_it(grad_out);
 
         for (int64_t oc = 0; oc < OC; ++oc) {
@@ -582,16 +583,16 @@ Expected<void> Conv2DNode::apply(Runtime& rt, GradientMap& grads) {
             }
         }
 
-        auto it = grads.find(weight_.id());
+        auto it = grads.find(inputs_[1].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, dw);
         } else {
-            grads[weight_.id()] = dw;
+            grads[inputs_[1].id()] = dw;
         }
     }
 
     // d_bias: sum grad_out over N, H, W per output channel
-    if (bias_.defined() && bias_.requires_grad() && bias_.type().numel() > 0) {
+    if (inputs_[2].defined() && inputs_[2].requires_grad() && inputs_[2].type().numel() > 0) {
         auto db_type = TensorType::contiguous({OC}, DType::Float32);
         Tensor db(db_type, rt.allocator().allocate(db_type), false);
         TensorIterator<float> db_it(db);
@@ -609,11 +610,11 @@ Expected<void> Conv2DNode::apply(Runtime& rt, GradientMap& grads) {
             db_it[oc] = sum;
         }
 
-        auto it = grads.find(bias_.id());
+        auto it = grads.find(inputs_[2].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, db);
         } else {
-            grads[bias_.id()] = db;
+            grads[inputs_[2].id()] = db;
         }
     }
 
@@ -648,15 +649,15 @@ Expected<void> MaxPool2dNode::apply(Runtime& rt, GradientMap& grads) {
     auto grad_it = grads.find(output_.id());
     if (grad_it == grads.end()) return {};
 
-    const auto& in_shape = input_.type().shape();
+    const auto& in_shape = inputs_[0].type().shape();
     auto N = in_shape[0], C = in_shape[1], H = in_shape[2], W = in_shape[3];
     auto OH = output_.type().shape()[2], OW = output_.type().shape()[3];
 
-    auto dx_type = TensorType::contiguous({N, C, H, W}, input_.type().dtype());
+    auto dx_type = TensorType::contiguous({N, C, H, W}, inputs_[0].type().dtype());
     Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
     TensorIterator<float> dx_it(dx);
     Tensor grad_out = grad_it->second;
-    TensorIterator<const float> inp_it(input_);
+    TensorIterator<const float> inp_it(inputs_[0]);
     TensorIterator<const float> go_it(grad_out);
 
     for (int64_t n = 0; n < N; ++n) {
@@ -687,11 +688,11 @@ Expected<void> MaxPool2dNode::apply(Runtime& rt, GradientMap& grads) {
         }
     }
 
-    auto it = grads.find(input_.id());
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, dx);
     } else {
-        grads[input_.id()] = dx;
+        grads[inputs_[0].id()] = dx;
     }
 
     return {};
@@ -725,11 +726,11 @@ Expected<void> AvgPool2dNode::apply(Runtime& rt, GradientMap& grads) {
     auto grad_it = grads.find(output_.id());
     if (grad_it == grads.end()) return {};
 
-    const auto& in_shape = input_.type().shape();
+    const auto& in_shape = inputs_[0].type().shape();
     auto N = in_shape[0], C = in_shape[1], H = in_shape[2], W = in_shape[3];
     auto OH = output_.type().shape()[2], OW = output_.type().shape()[3];
 
-    auto dx_type = TensorType::contiguous({N, C, H, W}, input_.type().dtype());
+    auto dx_type = TensorType::contiguous({N, C, H, W}, inputs_[0].type().dtype());
     Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
     TensorIterator<float> dx_it(dx);
     Tensor grad_out = grad_it->second;
@@ -755,11 +756,11 @@ Expected<void> AvgPool2dNode::apply(Runtime& rt, GradientMap& grads) {
         }
     }
 
-    auto it = grads.find(input_.id());
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, dx);
     } else {
-        grads[input_.id()] = dx;
+        grads[inputs_[0].id()] = dx;
     }
 
     return {};
@@ -790,14 +791,14 @@ Expected<void> BatchNormNode::apply(Runtime& rt, GradientMap& grads) {
     if (grad_it == grads.end()) return {};
     Tensor grad_out = grad_it->second;
 
-    const auto& in_shape = input_.type().shape();
+    const auto& in_shape = inputs_[0].type().shape();
     int64_t N = in_shape[0], C = in_shape[1];
     int64_t spatial = 1;
     for (size_t i = 2; i < in_shape.size(); ++i) spatial *= in_shape[i];
     int64_t num_elements = N * spatial;
 
-    TensorIterator<const float> inp_it(input_);
-    TensorIterator<const float> g_it(gamma_);
+    TensorIterator<const float> inp_it(inputs_[0]);
+    TensorIterator<const float> g_it(inputs_[1]);
     TensorIterator<const float> go_it(grad_out);
 
     std::vector<float> mean(C, 0.0f);
@@ -826,7 +827,7 @@ Expected<void> BatchNormNode::apply(Runtime& rt, GradientMap& grads) {
     for (int64_t c = 0; c < C; ++c)
         inv_std[c] = 1.0f / std::sqrt(var[c] + epsilon_);
 
-    if (gamma_.requires_grad()) {
+    if (inputs_[1].requires_grad()) {
         auto dg_type = TensorType::contiguous({C}, DType::Float32);
         Tensor dg(dg_type, rt.allocator().allocate(dg_type), false);
         TensorIterator<float> dg_it(dg);
@@ -841,15 +842,15 @@ Expected<void> BatchNormNode::apply(Runtime& rt, GradientMap& grads) {
             dg_it[c] = sum;
         }
 
-        auto it = grads.find(gamma_.id());
+        auto it = grads.find(inputs_[1].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, dg);
         } else {
-            grads[gamma_.id()] = dg;
+            grads[inputs_[1].id()] = dg;
         }
     }
 
-    if (beta_.requires_grad()) {
+    if (inputs_[2].requires_grad()) {
         auto db_type = TensorType::contiguous({C}, DType::Float32);
         Tensor db(db_type, rt.allocator().allocate(db_type), false);
         TensorIterator<float> db_it(db);
@@ -862,15 +863,15 @@ Expected<void> BatchNormNode::apply(Runtime& rt, GradientMap& grads) {
             db_it[c] = sum;
         }
 
-        auto it = grads.find(beta_.id());
+        auto it = grads.find(inputs_[2].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, db);
         } else {
-            grads[beta_.id()] = db;
+            grads[inputs_[2].id()] = db;
         }
     }
 
-    if (input_.requires_grad()) {
+    if (inputs_[0].requires_grad()) {
         auto di_type = TensorType::contiguous(in_shape, DType::Float32);
         Tensor di(di_type, rt.allocator().allocate(di_type), false);
         TensorIterator<float> di_it(di);
@@ -900,11 +901,11 @@ Expected<void> BatchNormNode::apply(Runtime& rt, GradientMap& grads) {
             }
         }
 
-        auto it = grads.find(input_.id());
+        auto it = grads.find(inputs_[0].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, di);
         } else {
-            grads[input_.id()] = di;
+            grads[inputs_[0].id()] = di;
         }
     }
 
@@ -933,13 +934,13 @@ Expected<void> LayerNormNode::apply(Runtime& rt, GradientMap& grads) {
     if (grad_it == grads.end()) return {};
     Tensor grad_out = grad_it->second;
 
-    const auto& in_shape = input_.type().shape();
+    const auto& in_shape = inputs_[0].type().shape();
     auto N = in_shape[0];
     int64_t D = 1;
     for (size_t i = 1; i < in_shape.size(); ++i) D *= in_shape[i];
 
-    TensorIterator<const float> inp_it(input_);
-    TensorIterator<const float> g_it(gamma_);
+    TensorIterator<const float> inp_it(inputs_[0]);
+    TensorIterator<const float> g_it(inputs_[1]);
     TensorIterator<const float> go_it(grad_out);
 
     std::vector<float> mean(N), var(N), inv_std(N);
@@ -957,7 +958,7 @@ Expected<void> LayerNormNode::apply(Runtime& rt, GradientMap& grads) {
         inv_std[n] = 1.0f / std::sqrt(var[n] + epsilon_);
     }
 
-    if (gamma_.requires_grad()) {
+    if (inputs_[1].requires_grad()) {
         auto dg_type = TensorType::contiguous({D}, DType::Float32);
         Tensor dg(dg_type, rt.allocator().allocate(dg_type), false);
         TensorIterator<float> dg_it(dg);
@@ -971,15 +972,15 @@ Expected<void> LayerNormNode::apply(Runtime& rt, GradientMap& grads) {
             dg_it[d] = sum;
         }
 
-        auto it = grads.find(gamma_.id());
+        auto it = grads.find(inputs_[1].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, dg);
         } else {
-            grads[gamma_.id()] = dg;
+            grads[inputs_[1].id()] = dg;
         }
     }
 
-    if (beta_.requires_grad()) {
+    if (inputs_[2].requires_grad()) {
         auto db_type = TensorType::contiguous({D}, DType::Float32);
         Tensor db(db_type, rt.allocator().allocate(db_type), false);
         TensorIterator<float> db_it(db);
@@ -990,15 +991,15 @@ Expected<void> LayerNormNode::apply(Runtime& rt, GradientMap& grads) {
             db_it[d] = sum;
         }
 
-        auto it = grads.find(beta_.id());
+        auto it = grads.find(inputs_[2].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, db);
         } else {
-            grads[beta_.id()] = db;
+            grads[inputs_[2].id()] = db;
         }
     }
 
-    if (input_.requires_grad()) {
+    if (inputs_[0].requires_grad()) {
         auto di_type = TensorType::contiguous(in_shape, DType::Float32);
         Tensor di(di_type, rt.allocator().allocate(di_type), false);
         TensorIterator<float> di_it(di);
@@ -1022,11 +1023,11 @@ Expected<void> LayerNormNode::apply(Runtime& rt, GradientMap& grads) {
             }
         }
 
-        auto it = grads.find(input_.id());
+        auto it = grads.find(inputs_[0].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, di);
         } else {
-            grads[input_.id()] = di;
+            grads[inputs_[0].id()] = di;
         }
     }
 
@@ -1055,13 +1056,13 @@ Expected<void> GELUNode::apply(Runtime& rt, GradientMap& grads) {
     }
     Tensor grad_out = grad_it->second;
 
-    auto dx_type = TensorType::contiguous(x_.type().shape(), x_.type().dtype());
+    auto dx_type = TensorType::contiguous(inputs_[0].type().shape(), inputs_[0].type().dtype());
     Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
 
-    TensorIterator<const float> x_it(x_);
+    TensorIterator<const float> x_it(inputs_[0]);
     TensorIterator<const float> go_it(grad_out);
     TensorIterator<float> dx_it(dx);
-    auto n = x_.type().numel();
+    auto n = inputs_[0].type().numel();
     constexpr float alpha = 0.79788456f;
     constexpr float beta = 0.044715f;
 
@@ -1076,11 +1077,11 @@ Expected<void> GELUNode::apply(Runtime& rt, GradientMap& grads) {
         dx_it[i] = go_it[i] * df;
     }
 
-    auto it = grads.find(x_.id());
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, dx);
     } else {
-        grads[x_.id()] = dx;
+        grads[inputs_[0].id()] = dx;
     }
 
     return {};
@@ -1113,7 +1114,7 @@ Expected<void> ReshapeNode::apply(Runtime& rt, GradientMap& grads) {
     }
     Tensor grad_out = grad_it->second;
 
-    auto grad_type = TensorType::contiguous(x_.type().shape(), grad_out.type().dtype());
+    auto grad_type = TensorType::contiguous(inputs_[0].type().shape(), grad_out.type().dtype());
     Tensor grad(grad_type, rt.allocator().allocate(grad_type), false);
 
     TensorIterator<float> grad_dst(grad);
@@ -1123,11 +1124,11 @@ Expected<void> ReshapeNode::apply(Runtime& rt, GradientMap& grads) {
         grad_dst[i] = go_src[i];
     }
 
-    auto it = grads.find(x_.id());
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, grad);
     } else {
-        grads[x_.id()] = grad;
+        grads[inputs_[0].id()] = grad;
     }
 
     return {};
@@ -1174,17 +1175,17 @@ Expected<void> MeanNode::apply(Runtime& rt, GradientMap& grads) {
     if (grad_it == grads.end()) return {};
     Tensor grad_out = grad_it->second;
 
-    const auto& orig_shape = x_.type().shape();
+    const auto& orig_shape = inputs_[0].type().shape();
     auto ndim = orig_shape.size();
 
     int64_t reduction_size = 1;
     for (auto d : dims_) reduction_size *= orig_shape[d];
 
-    auto dx_type = TensorType::contiguous(orig_shape, x_.type().dtype());
+    auto dx_type = TensorType::contiguous(orig_shape, inputs_[0].type().dtype());
     Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
     TensorIterator<float> dx_it(dx);
     TensorIterator<const float> go_it(grad_out);
-    auto numel = x_.type().numel();
+    auto numel = inputs_[0].type().numel();
 
     std::vector<bool> is_reduced(ndim, false);
     for (auto d : dims_) is_reduced[d] = true;
@@ -1206,11 +1207,11 @@ Expected<void> MeanNode::apply(Runtime& rt, GradientMap& grads) {
         dx_it[flat] = go_it[out_flat] * inv;
     }
 
-    auto it = grads.find(x_.id());
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, dx);
     } else {
-        grads[x_.id()] = dx;
+        grads[inputs_[0].id()] = dx;
     }
 
     return {};
@@ -1249,7 +1250,7 @@ Expected<void> TransposeNode::apply(Runtime& rt, GradientMap& grads) {
     }
     Tensor grad_out = grad_it->second;
 
-    const auto& in_shape = x_.type().shape();
+    const auto& in_shape = inputs_[0].type().shape();
 
     // Create a transposed view of grad_out to undo the forward transpose
     auto grad_shape = grad_out.type().shape();
@@ -1269,11 +1270,11 @@ Expected<void> TransposeNode::apply(Runtime& rt, GradientMap& grads) {
         dx_it[i] = tv_it[i];
     }
 
-    auto it = grads.find(x_.id());
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, dx);
     } else {
-        grads[x_.id()] = dx;
+        grads[inputs_[0].id()] = dx;
     }
 
     return {};
@@ -1299,10 +1300,10 @@ Expected<void> Autograd::backward(Runtime& runtime, const Tensor& loss) {
 
     for (size_t i = 0; i < graph_.size(); ++i) {
         const auto& node = graph_[i];
-        for (const auto& input : node->inputs()) {
+        for (auto& input : node->inputs()) {
             auto it = grads_.find(input.id());
             if (it != grads_.end()) {
-                const_cast<Tensor&>(input).set_grad(it->second);
+                input.set_grad(it->second);
             }
         }
     }
