@@ -1,23 +1,24 @@
-# 21 — Replace repeated OpType switch with table-based dispatch
+# 21 — Polymorphic Autograd Node & OpRegistry Dispatch
 
 ## What to build
 
-The `Autograd::backward()` method in `src/autograd/autograd.cpp:1118-1159` contains a 10-case `switch(node.op)` that dispatches each operation type to its `backward()` function. Every new op requires adding a case to this switch.
+Replace the 15-case `switch(node.op)` statement in `src/autograd/autograd.cpp` and the static `OpType` enum dependency with a polymorphic `OpRegistry` / `Node` dispatch system.
 
-Replace the switch with a dispatch table (e.g., `std::array` or `std::unordered_map` of function pointers indexed by `OpType`). Then registering a new op is just adding an entry to the table.
+Each operation registers its backward evaluation handler (`Node` or `std::function<Expected<void>(Runtime&, const GraphNode&, GradientMap&)>`) into a central `OpRegistry` map. `Autograd::backward()` queries the registry to execute backward passes without needing a hardcoded switch statement or modifying `autograd.cpp` for every new op.
 
-This is a mechanical refactor. No behavior change.
+This satisfies the Open-Closed Principle and establishes the foundational seam required for multi-backend execution (`Ticket #22` AVX2 SIMD and `Ticket #23` OpenCL iGPU).
 
 ## Blocked by
 
-None — can start immediately.
+None — can start immediately. Priority: P0 (Prerequisite for AVX2 and OpenCL backends).
 
 ## Acceptance criteria
 
-- [ ] Switch statement replaced with table-based dispatch
-- [ ] Every existing op has an entry in the dispatch table
-- [ ] All existing tests pass unchanged
-- [ ] Adding a new op only requires adding one entry (not editing the switch + enum + forward)
+- [ ] `OpRegistry` class introduced in `include/axon/autograd/op_registry.h`
+- [ ] 15-case `switch(node.op)` in `Autograd::backward()` removed and replaced with dynamic `OpRegistry` lookup
+- [ ] All 15 existing operations (`MatMul`, `ReLU`, `Add`, `Conv2D`, `GELU`, etc.) register their backward handlers in `OpRegistry`
+- [ ] All 190 existing test cases in `axon_tests.exe` pass unchanged
+- [ ] Adding a new operation can be done in its own file without editing `autograd.h` or `autograd.cpp`
 
 ## Status
 
