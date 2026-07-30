@@ -559,3 +559,141 @@ TEST_CASE("cpu::softmax on non-contiguous (transposed) input", "[backend][cpu][n
         REQUIRE(it[i] == Catch::Approx(out_ref.data<float>()[i]).epsilon(1e-5f));
     }
 }
+
+// ── Non-contiguous reduction kernel tests ─────────────────────────────
+
+TEST_CASE("cpu::matmul on non-contiguous (transposed) A", "[backend][cpu][noncontig]") {
+    Runtime rt;
+    auto storage_a = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    float a_vals[] = {1.0f, 4.0f, 2.0f, 5.0f, 3.0f, 6.0f};
+    std::memcpy(storage_a->data, a_vals, 6 * sizeof(float));
+    TensorType nc_type({2, 3}, {1, 2}, DType::Float32);
+    Tensor a_nc(nc_type, storage_a, false, 0);
+
+    auto b = rt.empty({3, 2});
+    float b_vals[] = {7,8,9,10,11,12};
+    std::memcpy(b.data<float>(), b_vals, 6 * sizeof(float));
+
+    auto a_ref = rt.empty({2, 3});
+    float a_ref_vals[] = {1,2,3,4,5,6};
+    std::memcpy(a_ref.data<float>(), a_ref_vals, 6 * sizeof(float));
+    auto out_ref = rt.empty({2, 2});
+    cpu::matmul(out_ref, a_ref, b);
+
+    auto storage_out = rt.allocator().allocate(TensorType::contiguous({4}, DType::Float32));
+    Tensor out_nc(TensorType::contiguous({2, 2}, DType::Float32), storage_out, false, 0);
+    auto result = cpu::matmul(out_nc, a_nc, b);
+    REQUIRE(result);
+
+    for (int64_t i = 0; i < 4; ++i) {
+        REQUIRE(out_nc.data<float>()[i] == Catch::Approx(out_ref.data<float>()[i]));
+    }
+}
+
+TEST_CASE("cpu::conv2d on non-contiguous input", "[backend][cpu][noncontig]") {
+    Runtime rt;
+    auto storage_inp = rt.allocator().allocate(TensorType::contiguous({4}, DType::Float32));
+    float inp_vals[] = {1.0f, 3.0f, 2.0f, 4.0f};
+    std::memcpy(storage_inp->data, inp_vals, 4 * sizeof(float));
+    TensorType inp_nc_type({1, 1, 2, 2}, {4, 4, 1, 2}, DType::Float32);
+    Tensor inp_nc(inp_nc_type, storage_inp, false, 0);
+
+    auto inp_ref = rt.empty({1, 1, 2, 2});
+    float inp_ref_vals[] = {1,2,3,4};
+    std::memcpy(inp_ref.data<float>(), inp_ref_vals, 4 * sizeof(float));
+
+    auto weight = rt.ones({1, 1, 1, 1});
+    weight.data<float>()[0] = 2.0f;
+
+    auto out_ref = rt.empty({1, 1, 2, 2});
+    cpu::conv2d(out_ref, inp_ref, weight, 1, 0);
+
+    auto storage_out = rt.allocator().allocate(TensorType::contiguous({4}, DType::Float32));
+    Tensor out_nc(TensorType::contiguous({1, 1, 2, 2}, DType::Float32), storage_out, false, 0);
+    auto result = cpu::conv2d(out_nc, inp_nc, weight, 1, 0);
+    REQUIRE(result);
+
+    for (int64_t i = 0; i < 4; ++i) {
+        REQUIRE(out_nc.data<float>()[i] == Catch::Approx(out_ref.data<float>()[i]));
+    }
+}
+
+TEST_CASE("cpu::reduce_mean on non-contiguous input", "[backend][cpu][noncontig]") {
+    Runtime rt;
+    auto storage_inp = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    float inp_vals[] = {1.0f, 4.0f, 2.0f, 5.0f, 3.0f, 6.0f};
+    std::memcpy(storage_inp->data, inp_vals, 6 * sizeof(float));
+    TensorType nc_type({2, 3}, {1, 2}, DType::Float32);
+    Tensor inp_nc(nc_type, storage_inp, false, 0);
+
+    auto inp_ref = rt.empty({2, 3});
+    float ref_vals[] = {1,2,3,4,5,6};
+    std::memcpy(inp_ref.data<float>(), ref_vals, 6 * sizeof(float));
+
+    auto out_ref = rt.empty({2});
+    cpu::reduce_mean(out_ref, inp_ref, {1});
+
+    auto storage_out = rt.allocator().allocate(TensorType::contiguous({2}, DType::Float32));
+    Tensor out_nc(TensorType::contiguous({2}, DType::Float32), storage_out, false, 0);
+    auto result = cpu::reduce_mean(out_nc, inp_nc, {1});
+    REQUIRE(result);
+
+    REQUIRE(out_nc.data<float>()[0] == Catch::Approx(out_ref.data<float>()[0]));
+    REQUIRE(out_nc.data<float>()[1] == Catch::Approx(out_ref.data<float>()[1]));
+}
+
+TEST_CASE("cpu::batchnorm on non-contiguous input", "[backend][cpu][noncontig]") {
+    Runtime rt;
+    auto storage_inp = rt.allocator().allocate(TensorType::contiguous({4}, DType::Float32));
+    float inp_vals[] = {1.0f, 3.0f, 2.0f, 4.0f};
+    std::memcpy(storage_inp->data, inp_vals, 4 * sizeof(float));
+    TensorType inp_nc_type({1, 2, 1, 2}, {4, 1, 2, 2}, DType::Float32);
+    Tensor inp_nc(inp_nc_type, storage_inp, false, 0);
+
+    auto gamma = rt.ones({2});
+    auto beta = rt.zeros({2});
+    auto running_mean = rt.zeros({2});
+    auto running_var = rt.ones({2});
+
+    auto inp_ref = rt.empty({1, 2, 1, 2});
+    float ref_vals[] = {1,2,3,4};
+    std::memcpy(inp_ref.data<float>(), ref_vals, 4 * sizeof(float));
+    auto out_ref = rt.empty({1, 2, 1, 2});
+    cpu::batchnorm(out_ref, inp_ref, gamma, beta, running_mean, running_var, 0.9f, 1e-5f, false);
+
+    auto storage_out = rt.allocator().allocate(TensorType::contiguous({4}, DType::Float32));
+    Tensor out_nc(TensorType::contiguous({1, 2, 1, 2}, DType::Float32), storage_out, false, 0);
+    auto result = cpu::batchnorm(out_nc, inp_nc, gamma, beta, running_mean, running_var, 0.9f, 1e-5f, false);
+    REQUIRE(result);
+
+    for (int64_t i = 0; i < 4; ++i) {
+        REQUIRE(out_nc.data<float>()[i] == Catch::Approx(out_ref.data<float>()[i]));
+    }
+}
+
+TEST_CASE("cpu::layernorm on non-contiguous input", "[backend][cpu][noncontig]") {
+    Runtime rt;
+    auto storage_inp = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    float inp_vals[] = {1.0f, 4.0f, 2.0f, 5.0f, 3.0f, 6.0f};
+    std::memcpy(storage_inp->data, inp_vals, 6 * sizeof(float));
+    TensorType nc_type({2, 3}, {1, 2}, DType::Float32);
+    Tensor inp_nc(nc_type, storage_inp, false, 0);
+
+    auto gamma = rt.ones({3});
+    auto beta = rt.zeros({3});
+
+    auto inp_ref = rt.empty({2, 3});
+    float ref_vals[] = {1,2,3,4,5,6};
+    std::memcpy(inp_ref.data<float>(), ref_vals, 6 * sizeof(float));
+    auto out_ref = rt.empty({2, 3});
+    cpu::layernorm(out_ref, inp_ref, gamma, beta, 1e-5f);
+
+    auto storage_out = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    Tensor out_nc(TensorType::contiguous({2, 3}, DType::Float32), storage_out, false, 0);
+    auto result = cpu::layernorm(out_nc, inp_nc, gamma, beta, 1e-5f);
+    REQUIRE(result);
+
+    for (int64_t i = 0; i < 6; ++i) {
+        REQUIRE(out_nc.data<float>()[i] == Catch::Approx(out_ref.data<float>()[i]).epsilon(1e-4f));
+    }
+}

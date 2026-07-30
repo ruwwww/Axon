@@ -73,17 +73,17 @@ Expected<void> matmul(Tensor& out, const Tensor& a, const Tensor& b) {
         return Error{"cpu::matmul: only Float32 supported"};
     }
 
-    auto* a_ptr = a.data<const float>();
-    auto* b_ptr = b.data<const float>();
-    auto* out_ptr = out.data<float>();
+    const TensorIterator<float> a_it(a);
+    const TensorIterator<float> b_it(b);
+    TensorIterator<float> out_it(out);
 
     for (int64_t i = 0; i < M; ++i) {
         for (int64_t j = 0; j < N; ++j) {
             float sum = 0.0f;
             for (int64_t k = 0; k < K; ++k) {
-                sum += a_ptr[i * K + k] * b_ptr[k * N + j];
+                sum += a_it[i * K + k] * b_it[k * N + j];
             }
-            out_ptr[i * N + j] = sum;
+            out_it[i * N + j] = sum;
         }
     }
 
@@ -224,9 +224,9 @@ Expected<void> conv2d(Tensor& out, const Tensor& input, const Tensor& weight,
     if (C != IC) return Error{"cpu::conv2d: input channels != weight in_channels"};
     if (out_shape[0] != N || out_shape[1] != OC) return Error{"cpu::conv2d: output shape mismatch"};
 
-    auto* inp = input.data<const float>();
-    auto* w = weight.data<const float>();
-    auto* o = out.data<float>();
+    const TensorIterator<float> inp_it(input);
+    const TensorIterator<float> w_it(weight);
+    TensorIterator<float> o_it(out);
 
     for (int64_t n = 0; n < N; ++n) {
         for (int64_t oc = 0; oc < OC; ++oc) {
@@ -239,13 +239,13 @@ Expected<void> conv2d(Tensor& out, const Tensor& input, const Tensor& weight,
                                 int64_t ih = oh * stride + kh - padding;
                                 int64_t iw = ow * stride + kw - padding;
                                 if (ih >= 0 && ih < H && iw >= 0 && iw < W) {
-                                    sum += inp[n * C * H * W + ic * H * W + ih * W + iw]
-                                         * w[oc * IC * KH * KW + ic * KH * KW + kh * KW + kw];
+                                    sum += inp_it[n * C * H * W + ic * H * W + ih * W + iw]
+                                         * w_it[oc * IC * KH * KW + ic * KH * KW + kh * KW + kw];
                                 }
                             }
                         }
                     }
-                    o[n * OC * OH * OW + oc * OH * OW + oh * OW + ow] = sum;
+                    o_it[n * OC * OH * OW + oc * OH * OW + oh * OW + ow] = sum;
                 }
             }
         }
@@ -342,12 +342,12 @@ Expected<void> batchnorm(Tensor& out, const Tensor& input,
     for (size_t i = 2; i < in_shape.size(); ++i) spatial *= in_shape[i];
     int64_t num_elements = N * spatial;
 
-    auto* inp = input.data<const float>();
-    auto* g = gamma.data<const float>();
-    auto* b = beta.data<const float>();
-    auto* rm = running_mean.data<float>();
-    auto* rv = running_var.data<float>();
-    auto* o = out.data<float>();
+    const TensorIterator<float> inp_it(input);
+    const TensorIterator<float> g_it(gamma);
+    const TensorIterator<float> b_it(beta);
+    TensorIterator<float> rm_it(running_mean);
+    TensorIterator<float> rv_it(running_var);
+    TensorIterator<float> o_it(out);
 
     if (training) {
         // Compute mean per channel
@@ -356,7 +356,7 @@ Expected<void> batchnorm(Tensor& out, const Tensor& input,
             for (int64_t c = 0; c < C; ++c) {
                 float sum = 0.0f;
                 for (int64_t s = 0; s < spatial; ++s) {
-                    sum += inp[n * C * spatial + c * spatial + s];
+                    sum += inp_it[n * C * spatial + c * spatial + s];
                 }
                 mean[c] += sum;
             }
@@ -369,7 +369,7 @@ Expected<void> batchnorm(Tensor& out, const Tensor& input,
             for (int64_t c = 0; c < C; ++c) {
                 float sum = 0.0f;
                 for (int64_t s = 0; s < spatial; ++s) {
-                    float diff = inp[n * C * spatial + c * spatial + s] - mean[c];
+                    float diff = inp_it[n * C * spatial + c * spatial + s] - mean[c];
                     sum += diff * diff;
                 }
                 var[c] += sum;
@@ -383,23 +383,23 @@ Expected<void> batchnorm(Tensor& out, const Tensor& input,
                 float inv_std = 1.0f / std::sqrt(var[c] + epsilon);
                 for (int64_t s = 0; s < spatial; ++s) {
                     int64_t idx = n * C * spatial + c * spatial + s;
-                    o[idx] = (inp[idx] - mean[c]) * inv_std * g[c] + b[c];
+                    o_it[idx] = (inp_it[idx] - mean[c]) * inv_std * g_it[c] + b_it[c];
                 }
             }
         }
 
         // Update running stats
         for (int64_t c = 0; c < C; ++c) {
-            rm[c] = momentum * rm[c] + (1.0f - momentum) * mean[c];
-            rv[c] = momentum * rv[c] + (1.0f - momentum) * var[c];
+            rm_it[c] = momentum * rm_it[c] + (1.0f - momentum) * mean[c];
+            rv_it[c] = momentum * rv_it[c] + (1.0f - momentum) * var[c];
         }
     } else {
         for (int64_t n = 0; n < N; ++n) {
             for (int64_t c = 0; c < C; ++c) {
-                float inv_std = 1.0f / std::sqrt(rv[c] + epsilon);
+                float inv_std = 1.0f / std::sqrt(rv_it[c] + epsilon);
                 for (int64_t s = 0; s < spatial; ++s) {
                     int64_t idx = n * C * spatial + c * spatial + s;
-                    o[idx] = (inp[idx] - rm[c]) * inv_std * g[c] + b[c];
+                    o_it[idx] = (inp_it[idx] - rm_it[c]) * inv_std * g_it[c] + b_it[c];
                 }
             }
         }
@@ -419,26 +419,26 @@ Expected<void> layernorm(Tensor& out, const Tensor& input,
     int64_t D = 1;
     for (size_t i = 1; i < in_shape.size(); ++i) D *= in_shape[i];
 
-    auto* inp = input.data<const float>();
-    auto* g = gamma.data<const float>();
-    auto* b = beta.data<const float>();
-    auto* o = out.data<float>();
+    const TensorIterator<float> inp_it(input);
+    const TensorIterator<float> g_it(gamma);
+    const TensorIterator<float> b_it(beta);
+    TensorIterator<float> o_it(out);
 
     for (int64_t n = 0; n < N; ++n) {
         float mean = 0.0f;
-        for (int64_t d = 0; d < D; ++d) mean += inp[n * D + d];
+        for (int64_t d = 0; d < D; ++d) mean += inp_it[n * D + d];
         mean /= static_cast<float>(D);
 
         float variance = 0.0f;
         for (int64_t d = 0; d < D; ++d) {
-            float diff = inp[n * D + d] - mean;
+            float diff = inp_it[n * D + d] - mean;
             variance += diff * diff;
         }
         variance /= static_cast<float>(D);
 
         float inv_std = 1.0f / std::sqrt(variance + epsilon);
         for (int64_t d = 0; d < D; ++d) {
-            o[n * D + d] = (inp[n * D + d] - mean) * inv_std * g[d] + b[d];
+            o_it[n * D + d] = (inp_it[n * D + d] - mean) * inv_std * g_it[d] + b_it[d];
         }
     }
     return {};
@@ -459,12 +459,12 @@ Expected<void> reduce_mean(Tensor& out, const Tensor& input, const std::vector<i
         reduction_size *= shape[d];
     }
 
-    auto* inp = input.data<const float>();
-    auto* o = out.data<float>();
+    const TensorIterator<float> inp_it(input);
+    TensorIterator<float> o_it(out);
     auto numel = input.type().numel();
     auto out_numel = out.type().numel();
 
-    std::fill(o, o + out_numel, 0.0f);
+    for (int64_t i = 0; i < out_numel; ++i) o_it[i] = 0.0f;
 
     std::vector<int64_t> idx(ndim, 0);
     for (int64_t flat = 0; flat < numel; ++flat) {
@@ -480,11 +480,11 @@ Expected<void> reduce_mean(Tensor& out, const Tensor& input, const std::vector<i
                 out_flat = out_flat * shape[d] + idx[d];
             }
         }
-        o[out_flat] += inp[flat];
+        o_it[out_flat] += inp_it[flat];
     }
 
     float inv = 1.0f / static_cast<float>(reduction_size);
-    for (int64_t i = 0; i < out_numel; ++i) o[i] *= inv;
+    for (int64_t i = 0; i < out_numel; ++i) o_it[i] *= inv;
     return {};
 }
 
