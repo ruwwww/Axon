@@ -72,6 +72,47 @@ Expected<void> div(Tensor& out, const Tensor& a, const Tensor& b) {
     return elementwise_op(out, a, b, [](float x, float y) { return x / y; });
 }
 
+Expected<void> mul_scalar(Tensor& out, const Tensor& x, float scalar) {
+    if (x.type().shape() != out.type().shape()) {
+        return Error{"cpu::mul_scalar: shape mismatch"};
+    }
+    if (x.type().dtype() != DType::Float32 || out.type().dtype() != DType::Float32) {
+        return Error{"cpu::mul_scalar: only Float32 supported"};
+    }
+
+    TensorIterator<const float> x_it(x);
+    TensorIterator<float> out_it(out);
+    auto n = x.type().numel();
+
+    for (int64_t i = 0; i < n; ++i) {
+        out_it[i] = x_it[i] * scalar;
+    }
+
+    return {};
+}
+
+Expected<void> div_scalar(Tensor& out, const Tensor& x, float scalar) {
+    if (x.type().shape() != out.type().shape()) {
+        return Error{"cpu::div_scalar: shape mismatch"};
+    }
+    if (x.type().dtype() != DType::Float32 || out.type().dtype() != DType::Float32) {
+        return Error{"cpu::div_scalar: only Float32 supported"};
+    }
+    if (scalar == 0.0f) {
+        return Error{"cpu::div_scalar: division by zero"};
+    }
+
+    TensorIterator<const float> x_it(x);
+    TensorIterator<float> out_it(out);
+    auto n = x.type().numel();
+
+    for (int64_t i = 0; i < n; ++i) {
+        out_it[i] = x_it[i] / scalar;
+    }
+
+    return {};
+}
+
 Expected<void> matmul(Tensor& out, const Tensor& a, const Tensor& b) {
     const auto& a_shape = a.type().shape();
     const auto& b_shape = b.type().shape();

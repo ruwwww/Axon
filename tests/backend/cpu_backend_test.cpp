@@ -697,3 +697,68 @@ TEST_CASE("cpu::layernorm on non-contiguous input", "[backend][cpu][noncontig]")
         REQUIRE(out_nc.data<float>()[i] == Catch::Approx(out_ref.data<float>()[i]).epsilon(1e-4f));
     }
 }
+
+// ── mul_scalar ──────────────────────────────────────────────────────────
+
+TEST_CASE("cpu::mul_scalar multiplies each element by scalar", "[backend][cpu]") {
+    Runtime rt;
+    auto x = Tensor::empty(rt, {2, 3});
+    auto out = Tensor::empty(rt, {2, 3});
+
+    float x_data[] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+    std::memcpy(x.data<float>(), x_data, 6 * sizeof(float));
+
+    auto result = cpu::mul_scalar(out, x, 3.0f);
+    REQUIRE(result);
+
+    float expected[] = {3.0f, 6.0f, 9.0f, 12.0f, 15.0f, 18.0f};
+    for (int64_t i = 0; i < 6; ++i) {
+        REQUIRE(out.data<float>()[i] == Catch::Approx(expected[i]));
+    }
+}
+
+TEST_CASE("cpu::mul_scalar rejects shape mismatch", "[backend][cpu]") {
+    Runtime rt;
+    auto x = rt.ones({2, 3});
+    auto out = rt.empty({3, 2});
+
+    auto result = cpu::mul_scalar(out, x, 2.0f);
+    REQUIRE_FALSE(result);
+}
+
+// ── div_scalar ──────────────────────────────────────────────────────────
+
+TEST_CASE("cpu::div_scalar divides each element by scalar", "[backend][cpu]") {
+    Runtime rt;
+    auto x = Tensor::empty(rt, {2, 3});
+    auto out = Tensor::empty(rt, {2, 3});
+
+    float x_data[] = {2.0f, 4.0f, 6.0f, 8.0f, 10.0f, 12.0f};
+    std::memcpy(x.data<float>(), x_data, 6 * sizeof(float));
+
+    auto result = cpu::div_scalar(out, x, 2.0f);
+    REQUIRE(result);
+
+    float expected[] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+    for (int64_t i = 0; i < 6; ++i) {
+        REQUIRE(out.data<float>()[i] == Catch::Approx(expected[i]));
+    }
+}
+
+TEST_CASE("cpu::div_scalar rejects division by zero", "[backend][cpu]") {
+    Runtime rt;
+    auto x = rt.ones({2, 3});
+    auto out = rt.empty({2, 3});
+
+    auto result = cpu::div_scalar(out, x, 0.0f);
+    REQUIRE_FALSE(result);
+}
+
+TEST_CASE("cpu::div_scalar rejects shape mismatch", "[backend][cpu]") {
+    Runtime rt;
+    auto x = rt.ones({2, 3});
+    auto out = rt.empty({3, 2});
+
+    auto result = cpu::div_scalar(out, x, 2.0f);
+    REQUIRE_FALSE(result);
+}

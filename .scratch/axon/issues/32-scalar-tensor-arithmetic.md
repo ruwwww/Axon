@@ -12,13 +12,13 @@ Implement at the backend + autograd layer. The Runtime wiring is the current pub
 
 ## Acceptance criteria
 
-- [ ] `cpu::mul_scalar(Tensor& out, const Tensor& x, float scalar)` backend kernel
-- [ ] `cpu::div_scalar(Tensor& out, const Tensor& x, float scalar)` backend kernel
-- [ ] `runtime.mul_scalar(x, scalar)` and `runtime.div_scalar(x, scalar)` with autograd
-- [ ] `runtime.sub(a, b)` promoted from backend to Runtime with autograd `SubNode`
-- [ ] Unit tests for all new ops (forward + backward)
-- [ ] All existing tests still pass
+- [x] `cpu::mul_scalar(Tensor& out, const Tensor& x, float scalar)` backend kernel
+- [x] `cpu::div_scalar(Tensor& out, const Tensor& x, float scalar)` backend kernel
+- [x] `runtime.mul_scalar(x, scalar)` and `runtime.div_scalar(x, scalar)` with autograd
+- [x] `runtime.sub(a, b)` promoted from backend to Runtime with autograd `SubNode`
+- [x] Unit tests for all new ops (forward + backward)
+- [x] All existing tests still pass
 
 ## Status
 
-backlog
+completed

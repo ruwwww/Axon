@@ -37,6 +37,18 @@ struct AddOp {
     static Expected<Tensor> forward(Runtime& rt, const Tensor& a, const Tensor& b);
 };
 
+struct SubOp {
+    static Expected<Tensor> forward(Runtime& rt, const Tensor& a, const Tensor& b);
+};
+
+struct MulScalarOp {
+    static Expected<Tensor> forward(Runtime& rt, const Tensor& x, float scalar);
+};
+
+struct DivScalarOp {
+    static Expected<Tensor> forward(Runtime& rt, const Tensor& x, float scalar);
+};
+
 struct Conv2DOp {
     static Expected<Tensor> forward(Runtime& rt, const Tensor& input, const Tensor& weight,
                                     const Tensor& bias, int64_t stride, int64_t padding);

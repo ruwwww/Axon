@@ -52,6 +52,18 @@ Expected<Tensor> Runtime::add(const Tensor& a, const Tensor& b) {
     return AddOp::forward(*this, a, b);
 }
 
+Expected<Tensor> Runtime::sub(const Tensor& a, const Tensor& b) {
+    return SubOp::forward(*this, a, b);
+}
+
+Expected<Tensor> Runtime::mul_scalar(const Tensor& x, float scalar) {
+    return MulScalarOp::forward(*this, x, scalar);
+}
+
+Expected<Tensor> Runtime::div_scalar(const Tensor& x, float scalar) {
+    return DivScalarOp::forward(*this, x, scalar);
+}
+
 Expected<Tensor> Runtime::conv2d(const Tensor& input, const Tensor& weight, const Tensor& bias,
                                   int64_t stride, int64_t padding) {
     return Conv2DOp::forward(*this, input, weight, bias, stride, padding);

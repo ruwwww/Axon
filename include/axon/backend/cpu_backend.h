@@ -13,6 +13,9 @@ Expected<void> sub(Tensor& out, const Tensor& a, const Tensor& b);
 Expected<void> mul(Tensor& out, const Tensor& a, const Tensor& b);
 Expected<void> div(Tensor& out, const Tensor& a, const Tensor& b);
 
+Expected<void> mul_scalar(Tensor& out, const Tensor& x, float scalar);
+Expected<void> div_scalar(Tensor& out, const Tensor& x, float scalar);
+
 Expected<void> matmul(Tensor& out, const Tensor& a, const Tensor& b);
 Expected<void> relu(Tensor& out, const Tensor& x);
 Expected<void> gelu(Tensor& out, const Tensor& x);

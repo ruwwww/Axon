@@ -27,6 +27,9 @@ public:
     Expected<Tensor> transpose(const Tensor& x, int64_t dim1, int64_t dim2);
     Expected<Tensor> mean(const Tensor& x, const std::vector<int64_t>& dims, bool keepdim = false);
     Expected<Tensor> add(const Tensor& a, const Tensor& b);
+    Expected<Tensor> sub(const Tensor& a, const Tensor& b);
+    Expected<Tensor> mul_scalar(const Tensor& x, float scalar);
+    Expected<Tensor> div_scalar(const Tensor& x, float scalar);
     Expected<Tensor> l1_loss(const Tensor& pred, const Tensor& target);
     Expected<Tensor> conv2d(const Tensor& input, const Tensor& weight, const Tensor& bias,
                             int64_t stride = 1, int64_t padding = 0);

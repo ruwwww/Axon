@@ -1329,3 +1329,320 @@ TEST_CASE("CrossEntropyLossOp forward with non-contiguous logits uses TensorIter
     REQUIRE(std::isfinite(val));
     REQUIRE(val > 0.0f);
 }
+
+// ── SubOp ──────────────────────────────────────────────────────────────
+
+TEST_CASE("SubOp forward computes a - b", "[operation]") {
+    Runtime rt;
+    auto a = Tensor::empty(rt, {2, 3});
+    auto b = Tensor::empty(rt, {2, 3});
+
+    float a_data[] = {5.0f, 4.0f, 3.0f, 2.0f, 1.0f, 0.0f};
+    float b_data[] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
+    std::memcpy(a.data<float>(), a_data, 6 * sizeof(float));
+    std::memcpy(b.data<float>(), b_data, 6 * sizeof(float));
+
+    auto result = SubOp::forward(rt, a, b);
+    REQUIRE(result);
+
+    float expected[] = {4.0f, 3.0f, 2.0f, 1.0f, 0.0f, -1.0f};
+    for (int64_t i = 0; i < 6; ++i) {
+        REQUIRE(result.value().data<float>()[i] == Catch::Approx(expected[i]));
+    }
+}
+
+TEST_CASE("SubOp forward records graph node when requires_grad", "[operation]") {
+    Runtime rt;
+    auto a = rt.ones({2, 3});
+    a.set_requires_grad(true);
+    auto b = rt.ones({2, 3});
+    b.set_requires_grad(true);
+
+    auto result = SubOp::forward(rt, a, b);
+    REQUIRE(result);
+    REQUIRE(rt.autograd().graph().size() == 1);
+}
+
+TEST_CASE("SubOp backward propagates +grad to lhs and -grad to rhs", "[autograd]") {
+    Runtime rt;
+    auto a = rt.zeros({3});
+    a.set_requires_grad(true);
+    auto b = rt.zeros({3});
+    b.set_requires_grad(true);
+
+    float a_vals[] = {1.0f, 2.0f, 3.0f};
+    float b_vals[] = {0.5f, 1.0f, 1.5f};
+    std::memcpy(a.data<float>(), a_vals, 3 * sizeof(float));
+    std::memcpy(b.data<float>(), b_vals, 3 * sizeof(float));
+
+    auto out_exp = SubOp::forward(rt, a, b);
+    REQUIRE(out_exp);
+    auto out = out_exp.value();
+
+    rt.autograd().backward(rt, out);
+
+    auto& grads = rt.autograd().gradients();
+    REQUIRE(grads.count(a.id()) > 0);
+    REQUIRE(grads.count(b.id()) > 0);
+    for (int i = 0; i < 3; ++i) {
+        REQUIRE(grads.at(a.id()).data<float>()[i] == Catch::Approx(1.0f));
+        REQUIRE(grads.at(b.id()).data<float>()[i] == Catch::Approx(-1.0f));
+    }
+}
+
+TEST_CASE("SubOp backward populates GradientMap with correct IDs", "[autograd][debug]") {
+    Runtime rt;
+    auto a = Tensor::empty(rt, {2});
+    auto b = Tensor::empty(rt, {2});
+    a.set_requires_grad(true);
+    b.set_requires_grad(true);
+
+    a.data<float>()[0] = 1.0f; a.data<float>()[1] = 2.0f;
+    b.data<float>()[0] = 0.5f; b.data<float>()[1] = 1.0f;
+
+    auto out_exp = SubOp::forward(rt, a, b);
+    REQUIRE(out_exp);
+    auto out = out_exp.value();
+
+    rt.autograd().backward(rt, out);
+
+    auto& grads = rt.autograd().gradients();
+    REQUIRE(grads.count(a.id()) > 0);
+    REQUIRE(grads.count(b.id()) > 0);
+    REQUIRE(grads.at(a.id()).data<float>()[0] == Catch::Approx(1.0f));
+    REQUIRE(grads.at(b.id()).data<float>()[0] == Catch::Approx(-1.0f));
+}
+
+TEST_CASE("SubOp backward matches finite differences", "[autograd]") {
+    Runtime rt;
+    auto a = Tensor::empty(rt, {4});
+    auto b = Tensor::empty(rt, {4});
+    a.set_requires_grad(true);
+    b.set_requires_grad(true);
+
+    float a_data[] = {3.0f, 1.0f, 4.0f, 1.0f};
+    float b_data[] = {2.0f, 1.0f, 3.0f, 5.0f};
+    std::memcpy(a.data<float>(), a_data, 4 * sizeof(float));
+    std::memcpy(b.data<float>(), b_data, 4 * sizeof(float));
+
+    auto out_exp = SubOp::forward(rt, a, b);
+    REQUIRE(out_exp);
+    auto out = out_exp.value();
+
+    rt.autograd().backward(rt, out);
+
+    auto& grads = rt.autograd().gradients();
+    REQUIRE(grads.count(a.id()) > 0);
+    REQUIRE(grads.count(b.id()) > 0);
+
+    float eps = 1.0f / 1024.0f;
+    for (int i = 0; i < 4; ++i) {
+        a.data<float>()[i] += eps;
+        auto out_plus = SubOp::forward(rt, a, b).value();
+        float sum_plus = 0.0f;
+        for (int j = 0; j < 4; ++j) {
+            sum_plus += out_plus.data<float>()[j];
+        }
+        a.data<float>()[i] -= 2.0f * eps;
+        auto out_minus = SubOp::forward(rt, a, b).value();
+        float sum_minus = 0.0f;
+        for (int j = 0; j < 4; ++j) {
+            sum_minus += out_minus.data<float>()[j];
+        }
+        a.data<float>()[i] += eps;
+
+        float numerical_grad_a = (sum_plus - sum_minus) / (2.0f * eps);
+
+        auto analytical = grads.at(a.id()).data<float>()[i];
+        REQUIRE(static_cast<double>(analytical) == Catch::Approx(numerical_grad_a).epsilon(1e-3));
+    }
+
+    for (int i = 0; i < 4; ++i) {
+        b.data<float>()[i] += eps;
+        auto out_plus = SubOp::forward(rt, a, b).value();
+        float sum_plus = 0.0f;
+        for (int j = 0; j < 4; ++j) {
+            sum_plus += out_plus.data<float>()[j];
+        }
+        b.data<float>()[i] -= 2.0f * eps;
+        auto out_minus = SubOp::forward(rt, a, b).value();
+        float sum_minus = 0.0f;
+        for (int j = 0; j < 4; ++j) {
+            sum_minus += out_minus.data<float>()[j];
+        }
+        b.data<float>()[i] += eps;
+
+        float numerical_grad_b = (sum_plus - sum_minus) / (2.0f * eps);
+
+        auto analytical = grads.at(b.id()).data<float>()[i];
+        REQUIRE(static_cast<double>(analytical) == Catch::Approx(numerical_grad_b).epsilon(1e-3));
+    }
+}
+
+// ── MulScalarOp ────────────────────────────────────────────────────────
+
+TEST_CASE("MulScalarOp forward multiplies tensor by scalar", "[operation]") {
+    Runtime rt;
+    auto x = Tensor::empty(rt, {2, 3});
+    x.set_requires_grad(true);
+
+    float x_data[] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+    std::memcpy(x.data<float>(), x_data, 6 * sizeof(float));
+
+    auto result = MulScalarOp::forward(rt, x, 2.5f);
+    REQUIRE(result);
+
+    float expected[] = {2.5f, 5.0f, 7.5f, 10.0f, 12.5f, 15.0f};
+    for (int64_t i = 0; i < 6; ++i) {
+        REQUIRE(result.value().data<float>()[i] == Catch::Approx(expected[i]));
+    }
+}
+
+TEST_CASE("MulScalarOp forward records graph node when requires_grad", "[operation]") {
+    Runtime rt;
+    auto x = rt.ones({3});
+    x.set_requires_grad(true);
+
+    auto result = MulScalarOp::forward(rt, x, 2.0f);
+    REQUIRE(result);
+    REQUIRE(rt.autograd().graph().size() == 1);
+}
+
+TEST_CASE("MulScalarOp backward multiplies grad by scalar", "[autograd]") {
+    Runtime rt;
+    auto x = rt.zeros({4});
+    x.set_requires_grad(true);
+
+    float x_vals[] = {1.0f, 2.0f, 3.0f, 4.0f};
+    std::memcpy(x.data<float>(), x_vals, 4 * sizeof(float));
+
+    auto out_exp = MulScalarOp::forward(rt, x, 3.0f);
+    REQUIRE(out_exp);
+    auto out = out_exp.value();
+
+    rt.autograd().backward(rt, out);
+
+    auto& grads = rt.autograd().gradients();
+    REQUIRE(grads.count(x.id()) > 0);
+    for (int i = 0; i < 4; ++i) {
+        REQUIRE(grads.at(x.id()).data<float>()[i] == Catch::Approx(3.0f));
+    }
+}
+
+TEST_CASE("MulScalarOp backward matches finite differences", "[autograd]") {
+    Runtime rt;
+    auto x = Tensor::empty(rt, {4});
+    x.set_requires_grad(true);
+
+    float x_data[] = {1.0f, 2.0f, 3.0f, 4.0f};
+    std::memcpy(x.data<float>(), x_data, 4 * sizeof(float));
+
+    auto out_exp = MulScalarOp::forward(rt, x, 2.0f);
+    REQUIRE(out_exp);
+    auto out = out_exp.value();
+
+    rt.autograd().backward(rt, out);
+
+    auto& grads = rt.autograd().gradients();
+    REQUIRE(grads.count(x.id()) > 0);
+
+    float eps = 1.0f / 1024.0f;
+    for (int i = 0; i < 4; ++i) {
+        x.data<float>()[i] += eps;
+        auto out_plus = MulScalarOp::forward(rt, x, 2.0f).value();
+        float sum_plus = 0.0f;
+        for (int j = 0; j < 4; ++j) sum_plus += out_plus.data<float>()[j];
+        x.data<float>()[i] -= 2.0f * eps;
+        auto out_minus = MulScalarOp::forward(rt, x, 2.0f).value();
+        float sum_minus = 0.0f;
+        for (int j = 0; j < 4; ++j) sum_minus += out_minus.data<float>()[j];
+        x.data<float>()[i] += eps;
+
+        float numerical_grad = (sum_plus - sum_minus) / (2.0f * eps);
+        REQUIRE(static_cast<double>(grads.at(x.id()).data<float>()[i]) == Catch::Approx(numerical_grad).epsilon(1e-3));
+    }
+}
+
+// ── DivScalarOp ────────────────────────────────────────────────────────
+
+TEST_CASE("DivScalarOp forward divides tensor by scalar", "[operation]") {
+    Runtime rt;
+    auto x = Tensor::empty(rt, {2, 3});
+    x.set_requires_grad(true);
+
+    float x_data[] = {2.0f, 4.0f, 6.0f, 8.0f, 10.0f, 12.0f};
+    std::memcpy(x.data<float>(), x_data, 6 * sizeof(float));
+
+    auto result = DivScalarOp::forward(rt, x, 2.0f);
+    REQUIRE(result);
+
+    float expected[] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+    for (int64_t i = 0; i < 6; ++i) {
+        REQUIRE(result.value().data<float>()[i] == Catch::Approx(expected[i]));
+    }
+}
+
+TEST_CASE("DivScalarOp forward records graph node when requires_grad", "[operation]") {
+    Runtime rt;
+    auto x = rt.ones({3});
+    x.set_requires_grad(true);
+
+    auto result = DivScalarOp::forward(rt, x, 4.0f);
+    REQUIRE(result);
+    REQUIRE(rt.autograd().graph().size() == 1);
+}
+
+TEST_CASE("DivScalarOp backward divides grad by scalar", "[autograd]") {
+    Runtime rt;
+    auto x = rt.zeros({4});
+    x.set_requires_grad(true);
+
+    float x_vals[] = {1.0f, 2.0f, 3.0f, 4.0f};
+    std::memcpy(x.data<float>(), x_vals, 4 * sizeof(float));
+
+    auto out_exp = DivScalarOp::forward(rt, x, 2.0f);
+    REQUIRE(out_exp);
+    auto out = out_exp.value();
+
+    rt.autograd().backward(rt, out);
+
+    auto& grads = rt.autograd().gradients();
+    REQUIRE(grads.count(x.id()) > 0);
+    for (int i = 0; i < 4; ++i) {
+        REQUIRE(grads.at(x.id()).data<float>()[i] == Catch::Approx(0.5f));
+    }
+}
+
+TEST_CASE("DivScalarOp backward matches finite differences", "[autograd]") {
+    Runtime rt;
+    auto x = Tensor::empty(rt, {4});
+    x.set_requires_grad(true);
+
+    float x_data[] = {2.0f, 4.0f, 6.0f, 8.0f};
+    std::memcpy(x.data<float>(), x_data, 4 * sizeof(float));
+
+    auto out_exp = DivScalarOp::forward(rt, x, 2.0f);
+    REQUIRE(out_exp);
+    auto out = out_exp.value();
+
+    rt.autograd().backward(rt, out);
+
+    auto& grads = rt.autograd().gradients();
+    REQUIRE(grads.count(x.id()) > 0);
+
+    float eps = 1.0f / 1024.0f;
+    for (int i = 0; i < 4; ++i) {
+        x.data<float>()[i] += eps;
+        auto out_plus = DivScalarOp::forward(rt, x, 2.0f).value();
+        float sum_plus = 0.0f;
+        for (int j = 0; j < 4; ++j) sum_plus += out_plus.data<float>()[j];
+        x.data<float>()[i] -= 2.0f * eps;
+        auto out_minus = DivScalarOp::forward(rt, x, 2.0f).value();
+        float sum_minus = 0.0f;
+        for (int j = 0; j < 4; ++j) sum_minus += out_minus.data<float>()[j];
+        x.data<float>()[i] += eps;
+
+        float numerical_grad = (sum_plus - sum_minus) / (2.0f * eps);
+        REQUIRE(static_cast<double>(grads.at(x.id()).data<float>()[i]) == Catch::Approx(numerical_grad).epsilon(1e-3));
+    }
+}
