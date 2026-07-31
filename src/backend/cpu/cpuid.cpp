@@ -58,6 +58,10 @@ CpuFeatures detect_cpu_features() {
         feat.avx2 = (leaf7_regs[1] & (1 << 5)) != 0;
         feat.avx512f = (leaf7_regs[1] & (1 << 16)) != 0;
         feat.avx512vnni = (leaf7_regs[2] & (1 << 11)) != 0;
+
+        int leaf7_sub1_regs[4] = {0};
+        run_cpuid(7, 1, leaf7_sub1_regs);
+        feat.avx_vnni = (leaf7_sub1_regs[0] & (1 << 4)) != 0;
     }
 
     return feat;
@@ -67,6 +71,10 @@ static CpuFeatures g_cpu_features = detect_cpu_features();
 
 bool has_avx2() {
     return g_cpu_features.avx2 && g_cpu_features.fma3;
+}
+
+bool has_avx_vnni() {
+    return g_cpu_features.avx_vnni;
 }
 
 ISA get_best_isa() {

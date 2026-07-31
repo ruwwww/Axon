@@ -37,7 +37,7 @@ Phase 7: Graph Runtime & Compiler/JIT
 
 - [x] **#21** — Polymorphic Node DAG Autograd Engine
 - [x] **#22** — AVX2 SIMD CPU Backend & Architecture Assessment
-- [ ] **#26** — AVX-VNNI & Advanced Quantized SIMD Kernels ($Q4_K, Q5_K$)
+- [x] **#26** — AVX-VNNI & Advanced Quantized SIMD Kernels ($Q4_K, Q5_K$)
 - [ ] **#27** — KernelRegistry Device Dimension & Storage Accessor Seam
 - [ ] **#28** — Streamlined KernelKey (`OpId`, `Device`, `DType`, `Provider`) & Provider Abstraction
 - [ ] **#29** — OpenBLAS / BLAS GEMM Provider Integration

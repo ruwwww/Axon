@@ -1679,6 +1679,14 @@ Expected<void> matmul_q4_K(Tensor& out, const Tensor& a, const Tensor& b) {
         return Error{"cpu::matmul_q4_K: inner dimension mismatch"};
     }
 
+    auto fn = KernelRegistry::instance().dispatch("matmul_q4_K");
+    if (fn) {
+        Tensor outputs[] = {out};
+        Tensor inputs[] = {a, b};
+        KernelContext ctx{.outputs = outputs, .inputs = inputs};
+        return fn(ctx);
+    }
+
     auto M = a.type().shape()[0];
     auto K = a.type().shape()[1];
     auto N = b.type().shape()[1];
@@ -1941,6 +1949,14 @@ Expected<void> matmul_q5_K(Tensor& out, const Tensor& a, const Tensor& b) {
     }
     if (a.type().shape()[1] != b.type().shape()[0]) {
         return Error{"cpu::matmul_q5_K: inner dimension mismatch"};
+    }
+
+    auto fn = KernelRegistry::instance().dispatch("matmul_q5_K");
+    if (fn) {
+        Tensor outputs[] = {out};
+        Tensor inputs[] = {a, b};
+        KernelContext ctx{.outputs = outputs, .inputs = inputs};
+        return fn(ctx);
     }
 
     auto M = a.type().shape()[0];

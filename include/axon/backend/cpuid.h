@@ -17,10 +17,12 @@ struct CpuFeatures {
     bool fma3 = false;
     bool avx512f = false;
     bool avx512vnni = false;
+    bool avx_vnni = false;
 };
 
 CpuFeatures detect_cpu_features();
 bool has_avx2();
+bool has_avx_vnni();
 ISA get_best_isa();
 
 } // namespace axon::cpu

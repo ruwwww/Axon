@@ -62,6 +62,16 @@ inline uint16_t float_to_half(float f) {
     return static_cast<uint16_t>(sign | (exp << 10) | (mantissa >> 13));
 }
 
+inline void get_scale_min_k4(int j, const uint8_t* q, uint8_t* d, uint8_t* m) {
+    if (j < 4) {
+        *d = q[j] & 63;
+        *m = q[j + 4] & 63;
+    } else {
+        *d = (q[j + 4] & 0xF) | ((q[j - 4] >> 6) << 4);
+        *m = (q[j + 4] >> 4) | ((q[j] >> 6) << 4);
+    }
+}
+
 struct block_q8_0 {
     uint16_t d;
     int8_t qs[32];
