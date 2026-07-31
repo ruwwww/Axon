@@ -5,6 +5,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+option(AXON_USE_BLAS "Enable external BLAS backend integration" OFF)
+
 # Fetch Catch2 v3 for testing
 include(FetchContent)
 FetchContent_Declare(
@@ -32,6 +34,12 @@ endif()
 
 # Main library
 add_library(axon ${AXON_SOURCES})
+
+if(AXON_USE_BLAS)
+    find_package(BLAS REQUIRED)
+    target_link_libraries(axon PRIVATE ${BLAS_LIBRARIES})
+    target_compile_definitions(axon PUBLIC AXON_HAS_BLAS=1)
+endif()
 
 # Test executable
 enable_testing()

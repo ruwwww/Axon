@@ -40,6 +40,6 @@ Phase 7: Graph Runtime & Compiler/JIT
 - [x] **#26** — AVX-VNNI & Advanced Quantized SIMD Kernels ($Q4_K, Q5_K$)
 - [ ] **#27** — KernelRegistry Device Dimension & Storage Accessor Seam
 - [ ] **#28** — Streamlined KernelKey (`OpId`, `Device`, `DType`, `Provider`) & Provider Abstraction
-- [ ] **#29** — OpenBLAS / BLAS GEMM Provider Integration
-- [ ] **#30** — Dynamic GEMM Strategy Selection Policy
+- [x] **#29** — OpenBLAS / BLAS GEMM Provider Integration
+- [x] **#30** — Dynamic GEMM Strategy Selection Policy
 - [ ] **#31** — Permanent Automated Benchmark Suite

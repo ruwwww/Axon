@@ -1,5 +1,6 @@
 #include "axon/backend/cpu_backend.h"
 #include "axon/backend/registry.h"
+#include "axon/backend/strategy.h"
 #include "axon/tensor/tensor_iterator.h"
 #include <algorithm>
 #include <cmath>
@@ -94,7 +95,18 @@ Expected<void> matmul(Tensor& out, const Tensor& a, const Tensor& b) {
         return Error{"cpu::matmul: only Float32 supported"};
     }
 
-    auto fn = KernelRegistry::instance().dispatch("matmul");
+    bool blas_avail = false;
+#if defined(AXON_HAS_BLAS)
+    blas_avail = true;
+#endif
+    auto strat = choose_gemm_strategy(
+        a_shape, b_shape,
+        a.type().dtype(), a.type().quant(),
+        a.type().is_contiguous(), b.type().is_contiguous(),
+        detect_cpu_features(), blas_avail
+    );
+
+    auto fn = KernelRegistry::instance().dispatch(strat.kernel_name);
     if (fn) {
         Tensor outputs[] = {out};
         Tensor inputs[] = {a, b};
