@@ -1626,6 +1626,14 @@ Expected<void> matmul_q4(Tensor& out, const Tensor& a, const Tensor& b) {
         return Error{"cpu::matmul_q4: inner dimension mismatch"};
     }
 
+    auto fn = KernelRegistry::instance().dispatch("matmul_q4_0");
+    if (fn) {
+        Tensor outputs[] = {out};
+        Tensor inputs[] = {a, b};
+        KernelContext ctx{.outputs = outputs, .inputs = inputs};
+        return fn(ctx);
+    }
+
     auto M = a.type().shape()[0];
     auto K = a.type().shape()[1];
     auto N = b.type().shape()[1];
