@@ -17,8 +17,8 @@ struct FakeDataset : Dataset {
     size_t size() const override { return count; }
 
     std::pair<Tensor, Tensor> get(size_t index) override {
-        Tensor input(TensorType::contiguous(input_shape, DType::Float32), std::make_shared<Storage>(input_shape[0] * 4), false);
-        Tensor target(TensorType::contiguous(target_shape, DType::Int64), std::make_shared<Storage>(target_shape[0] * 8), false);
+        Tensor input(TensorMetadata::contiguous(input_shape, DType::Float32), std::make_shared<Storage>(input_shape[0] * 4), false);
+        Tensor target(TensorMetadata::contiguous(target_shape, DType::Int64), std::make_shared<Storage>(target_shape[0] * 8), false);
         input.data<float>()[0] = static_cast<float>(index);
         target.data<int64_t>()[0] = static_cast<int64_t>(index % 10);
         return {input, target};

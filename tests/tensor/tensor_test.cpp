@@ -67,12 +67,12 @@ TEST_CASE("Allocator-created tensor has storage_offset == 0", "[tensor][offset]"
 
 TEST_CASE("Tensor data<T>() with non-zero offset points past start of storage", "[tensor][offset]") {
     Runtime rt;
-    auto storage = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
     auto* raw = static_cast<float*>(storage->data);
     for (int i = 0; i < 6; ++i) raw[i] = static_cast<float>(i + 1);
 
     // Create tensor with offset 3 (offset by 3 elements)
-    TensorType type({3}, {1}, DType::Float32);
+    TensorMetadata type({3}, {1}, DType::Float32);
     Tensor t(type, storage, false, 3);
 
     REQUIRE(t.storage_offset() == 3);

@@ -4,7 +4,7 @@
 
 Reshape/view operation that changes tensor shape without copying storage.
 
-- `ReshapeOp::forward(tensor, new_shape)` — validates new shape has same numel, returns Tensor with same Storage and updated TensorType (contiguous strides)
+- `ReshapeOp::forward(tensor, new_shape)` — validates new shape has same numel, returns Tensor with same Storage and updated TensorMetadata (contiguous strides)
 - Backward: gradient is reshaped back to original shape (identity with shape change)
 - Only contiguous tensors in Phase 1 (non-contiguous fails gracefully)
 - Register in OpType enum and autograd dispatch

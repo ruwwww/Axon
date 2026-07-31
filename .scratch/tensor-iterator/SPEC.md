@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-Every kernel in the CPU backend and every autograd backward pass assumes tensors are contiguous in memory. Strides are stored in `TensorType` but never read by any kernel. After a view operation (transpose, reshape, etc.), subsequent kernels read/write the wrong memory locations or force expensive materialization copies. This limits correctness to contiguous tensors only and will cause silent data corruption once view ops (slice, narrow, permute) are added.
+Every kernel in the CPU backend and every autograd backward pass assumes tensors are contiguous in memory. Strides are stored in `TensorMetadata` but never read by any kernel. After a view operation (transpose, reshape, etc.), subsequent kernels read/write the wrong memory locations or force expensive materialization copies. This limits correctness to contiguous tensors only and will cause silent data corruption once view ops (slice, narrow, permute) are added.
 
 ## Solution
 

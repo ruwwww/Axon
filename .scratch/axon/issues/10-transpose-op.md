@@ -4,7 +4,7 @@
 
 Transpose operation that swaps tensor dimensions.
 
-- `TransposeOp::forward(tensor, dim1, dim2)` — returns Tensor with same Storage, swapped strides in TensorType
+- `TransposeOp::forward(tensor, dim1, dim2)` — returns Tensor with same Storage, swapped strides in TensorMetadata
 - Backward: transpose same two dims (self-inverse)
 - Register in OpType enum and autograd dispatch
 - Runtime::transpose() method

@@ -65,7 +65,7 @@ size_t CIFAR10::size() const {
 
 std::pair<Tensor, Tensor> CIFAR10::get(size_t index) {
     // Image: CHW format (3, 32, 32), normalized to [0,1]
-    auto img_type = TensorType::contiguous({3, 32, 32}, DType::Float32);
+    auto img_type = TensorMetadata::contiguous({3, 32, 32}, DType::Float32);
     Tensor img(img_type, impl_->rt.allocator().allocate(img_type), false);
 
     auto* img_ptr = img.data<float>();
@@ -76,7 +76,7 @@ std::pair<Tensor, Tensor> CIFAR10::get(size_t index) {
     }
 
     // Label
-    auto label_type = TensorType::contiguous({1}, DType::Int64);
+    auto label_type = TensorMetadata::contiguous({1}, DType::Int64);
     Tensor label(label_type, impl_->rt.allocator().allocate(label_type), false);
     label.data<int64_t>()[0] = static_cast<int64_t>(impl_->labels[index]);
 

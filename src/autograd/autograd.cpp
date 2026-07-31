@@ -42,7 +42,7 @@ Expected<Tensor> MatMulOp::forward(Runtime& rt, const Tensor& a, const Tensor& b
 
     auto M = a.type().shape()[0];
     auto N = b.type().shape()[1];
-    auto out_type = TensorType::contiguous({M, N}, a.type().dtype());
+    auto out_type = TensorMetadata::contiguous({M, N}, a.type().dtype());
     bool need_grad = a.requires_grad() || b.requires_grad();
     auto out = Tensor(out_type, rt.allocator().allocate(out_type), need_grad);
 
@@ -68,7 +68,7 @@ Expected<void> MatMulNode::apply(Runtime& rt, GradientMap& grads) {
 
     // da = grad_out @ b^T  (M x K)
     {
-        auto da_type = TensorType::contiguous({M, K}, inputs_[0].type().dtype());
+        auto da_type = TensorMetadata::contiguous({M, K}, inputs_[0].type().dtype());
         Tensor da(da_type, rt.allocator().allocate(da_type), false);
         auto* da_ptr = da.data<float>();
 
@@ -95,7 +95,7 @@ Expected<void> MatMulNode::apply(Runtime& rt, GradientMap& grads) {
 
     // db = a^T @ grad_out  (K x N)
     {
-        auto db_type = TensorType::contiguous({K, N}, inputs_[1].type().dtype());
+        auto db_type = TensorMetadata::contiguous({K, N}, inputs_[1].type().dtype());
         Tensor db(db_type, rt.allocator().allocate(db_type), false);
         auto* db_ptr = db.data<float>();
 
@@ -126,7 +126,7 @@ Expected<void> MatMulNode::apply(Runtime& rt, GradientMap& grads) {
 // ── ReLUOp ────────────────────────────────────────────────────────────
 
 Expected<Tensor> ReLUOp::forward(Runtime& rt, const Tensor& x) {
-    auto out_type = TensorType::contiguous(x.type().shape(), x.type().dtype());
+    auto out_type = TensorMetadata::contiguous(x.type().shape(), x.type().dtype());
     auto out = Tensor(out_type, rt.allocator().allocate(out_type), x.requires_grad());
 
     RETURN_IF_ERROR(cpu::relu(out, x));
@@ -145,7 +145,7 @@ Expected<void> ReLUNode::apply(Runtime& rt, GradientMap& grads) {
     }
     Tensor grad_out = grad_it->second;
 
-    auto dx_type = TensorType::contiguous(inputs_[0].type().shape(), inputs_[0].type().dtype());
+    auto dx_type = TensorMetadata::contiguous(inputs_[0].type().shape(), inputs_[0].type().dtype());
     Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
 
     TensorIterator<const float> x_it(inputs_[0]);
@@ -182,7 +182,7 @@ Expected<Tensor> AddOp::forward(Runtime& rt, const Tensor& a, const Tensor& b) {
         out_shape = a_shape;
     }
 
-    auto out_type = TensorType::contiguous(out_shape, a.type().dtype());
+    auto out_type = TensorMetadata::contiguous(out_shape, a.type().dtype());
     bool need_grad = a.requires_grad() || b.requires_grad();
     auto out = Tensor(out_type, rt.allocator().allocate(out_type), need_grad);
 
@@ -225,7 +225,7 @@ Expected<void> AddNode::apply(Runtime& rt, GradientMap& grads) {
         if (inputs_[1].type().shape().size() == 1 && grad_out.type().shape().size() == 2) {
             auto M = grad_out.type().shape()[0];
             auto N = grad_out.type().shape()[1];
-            auto db_type = TensorType::contiguous(inputs_[1].type().shape(), inputs_[1].type().dtype());
+            auto db_type = TensorMetadata::contiguous(inputs_[1].type().shape(), inputs_[1].type().dtype());
             Tensor db(db_type, rt.allocator().allocate(db_type), false);
             auto* db_ptr = db.data<float>();
 
@@ -264,7 +264,7 @@ Expected<Tensor> SubOp::forward(Runtime& rt, const Tensor& a, const Tensor& b) {
         return Error{"SubOp: shape mismatch"};
     }
 
-    auto out_type = TensorType::contiguous(a.type().shape(), a.type().dtype());
+    auto out_type = TensorMetadata::contiguous(a.type().shape(), a.type().dtype());
     bool need_grad = a.requires_grad() || b.requires_grad();
     auto out = Tensor(out_type, rt.allocator().allocate(out_type), need_grad);
 
@@ -285,7 +285,7 @@ Expected<void> SubNode::apply(Runtime& rt, GradientMap& grads) {
     Tensor grad_out = grad_it->second;
 
     {
-        auto dx_type = TensorType::contiguous(inputs_[0].type().shape(), inputs_[0].type().dtype());
+        auto dx_type = TensorMetadata::contiguous(inputs_[0].type().shape(), inputs_[0].type().dtype());
         Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
         TensorIterator<const float> go_it(grad_out);
         TensorIterator<float> dx_it(dx);
@@ -304,7 +304,7 @@ Expected<void> SubNode::apply(Runtime& rt, GradientMap& grads) {
     {
         auto it = grads.find(inputs_[1].id());
         if (it != grads.end()) {
-            auto neg_grad_type = TensorType::contiguous(inputs_[1].type().shape(), inputs_[1].type().dtype());
+            auto neg_grad_type = TensorMetadata::contiguous(inputs_[1].type().shape(), inputs_[1].type().dtype());
             Tensor neg_grad(neg_grad_type, rt.allocator().allocate(neg_grad_type), false);
             TensorIterator<const float> go_it(grad_out);
             TensorIterator<float> ng_it(neg_grad);
@@ -314,7 +314,7 @@ Expected<void> SubNode::apply(Runtime& rt, GradientMap& grads) {
             }
             cpu::add(it->second, it->second, neg_grad);
         } else {
-            auto neg_grad_type = TensorType::contiguous(inputs_[1].type().shape(), inputs_[1].type().dtype());
+            auto neg_grad_type = TensorMetadata::contiguous(inputs_[1].type().shape(), inputs_[1].type().dtype());
             Tensor neg_grad(neg_grad_type, rt.allocator().allocate(neg_grad_type), false);
             TensorIterator<const float> go_it(grad_out);
             TensorIterator<float> ng_it(neg_grad);
@@ -332,7 +332,7 @@ Expected<void> SubNode::apply(Runtime& rt, GradientMap& grads) {
 // ── MulScalarOp ────────────────────────────────────────────────────────
 
 Expected<Tensor> MulScalarOp::forward(Runtime& rt, const Tensor& x, float scalar) {
-    auto out_type = TensorType::contiguous(x.type().shape(), x.type().dtype());
+    auto out_type = TensorMetadata::contiguous(x.type().shape(), x.type().dtype());
     bool need_grad = x.requires_grad();
     auto out = Tensor(out_type, rt.allocator().allocate(out_type), need_grad);
 
@@ -352,7 +352,7 @@ Expected<void> MulScalarNode::apply(Runtime& rt, GradientMap& grads) {
     }
     Tensor grad_out = grad_it->second;
 
-    auto dx_type = TensorType::contiguous(inputs_[0].type().shape(), inputs_[0].type().dtype());
+    auto dx_type = TensorMetadata::contiguous(inputs_[0].type().shape(), inputs_[0].type().dtype());
     Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
 
     TensorIterator<const float> go_it(grad_out);
@@ -377,7 +377,7 @@ Expected<void> MulScalarNode::apply(Runtime& rt, GradientMap& grads) {
 // ── DivScalarOp ────────────────────────────────────────────────────────
 
 Expected<Tensor> DivScalarOp::forward(Runtime& rt, const Tensor& x, float scalar) {
-    auto out_type = TensorType::contiguous(x.type().shape(), x.type().dtype());
+    auto out_type = TensorMetadata::contiguous(x.type().shape(), x.type().dtype());
     bool need_grad = x.requires_grad();
     auto out = Tensor(out_type, rt.allocator().allocate(out_type), need_grad);
 
@@ -397,7 +397,7 @@ Expected<void> DivScalarNode::apply(Runtime& rt, GradientMap& grads) {
     }
     Tensor grad_out = grad_it->second;
 
-    auto dx_type = TensorType::contiguous(inputs_[0].type().shape(), inputs_[0].type().dtype());
+    auto dx_type = TensorMetadata::contiguous(inputs_[0].type().shape(), inputs_[0].type().dtype());
     Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
 
     TensorIterator<const float> go_it(grad_out);
@@ -428,11 +428,11 @@ Expected<Tensor> CrossEntropyLossOp::forward(Runtime& rt, const Tensor& logits, 
     auto N = shape[0];
     auto C = shape[1];
 
-    auto loss_type = TensorType::contiguous({1}, logits.type().dtype());
+    auto loss_type = TensorMetadata::contiguous({1}, logits.type().dtype());
     bool need_grad = logits.requires_grad();
     auto loss = Tensor(loss_type, rt.allocator().allocate(loss_type), need_grad);
 
-    auto ls_type = TensorType::contiguous({N, C}, logits.type().dtype());
+    auto ls_type = TensorMetadata::contiguous({N, C}, logits.type().dtype());
     Tensor log_softmax_out(ls_type, rt.allocator().allocate(ls_type), false);
     RETURN_IF_ERROR(cpu::log_softmax(log_softmax_out, logits));
 
@@ -462,7 +462,7 @@ Expected<void> CrossEntropyLossNode::apply(Runtime& rt, GradientMap& grads) {
     auto C = inputs_[0].type().shape()[1];
     float inv_N = 1.0f / static_cast<float>(N);
 
-    auto dlogits_type = TensorType::contiguous({N, C}, inputs_[0].type().dtype());
+    auto dlogits_type = TensorMetadata::contiguous({N, C}, inputs_[0].type().dtype());
     Tensor dlogits(dlogits_type, rt.allocator().allocate(dlogits_type), false);
 
     TensorIterator<const float> ls_it(log_softmax_out_);
@@ -493,7 +493,7 @@ Expected<Tensor> MSELossOp::forward(Runtime& rt, const Tensor& pred, const Tenso
         return Error{"MSELossOp: shape mismatch between pred and target"};
     }
 
-    auto loss_type = TensorType::contiguous({1}, pred.type().dtype());
+    auto loss_type = TensorMetadata::contiguous({1}, pred.type().dtype());
     bool need_grad = pred.requires_grad();
     auto loss = Tensor(loss_type, rt.allocator().allocate(loss_type), need_grad);
 
@@ -524,7 +524,7 @@ Expected<void> MSELossNode::apply(Runtime& rt, GradientMap& grads) {
     auto n = inputs_[0].type().numel();
     float scale = 2.0f / static_cast<float>(n);
 
-    auto dpred_type = TensorType::contiguous(inputs_[0].type().shape(), inputs_[0].type().dtype());
+    auto dpred_type = TensorMetadata::contiguous(inputs_[0].type().shape(), inputs_[0].type().dtype());
     Tensor dpred(dpred_type, rt.allocator().allocate(dpred_type), false);
 
     TensorIterator<const float> p_it(inputs_[0]);
@@ -552,7 +552,7 @@ Expected<Tensor> L1LossOp::forward(Runtime& rt, const Tensor& pred, const Tensor
         return Error{"L1LossOp: shape mismatch between pred and target"};
     }
 
-    auto loss_type = TensorType::contiguous({1}, pred.type().dtype());
+    auto loss_type = TensorMetadata::contiguous({1}, pred.type().dtype());
     bool need_grad = pred.requires_grad();
     auto loss = Tensor(loss_type, rt.allocator().allocate(loss_type), need_grad);
 
@@ -582,7 +582,7 @@ Expected<void> L1LossNode::apply(Runtime& rt, GradientMap& grads) {
     auto n = inputs_[0].type().numel();
     float scale = 1.0f / static_cast<float>(n);
 
-    auto dpred_type = TensorType::contiguous(inputs_[0].type().shape(), inputs_[0].type().dtype());
+    auto dpred_type = TensorMetadata::contiguous(inputs_[0].type().shape(), inputs_[0].type().dtype());
     Tensor dpred(dpred_type, rt.allocator().allocate(dpred_type), false);
 
     TensorIterator<const float> p_it(inputs_[0]);
@@ -629,7 +629,7 @@ Expected<Tensor> Conv2DOp::forward(Runtime& rt, const Tensor& input, const Tenso
     int64_t OH = (H + 2 * padding - KH) / stride + 1;
     int64_t OW = (W + 2 * padding - KW) / stride + 1;
 
-    auto out_type = TensorType::contiguous({N, OC, OH, OW}, input.type().dtype());
+    auto out_type = TensorMetadata::contiguous({N, OC, OH, OW}, input.type().dtype());
     bool need_grad = input.requires_grad() || weight.requires_grad() || bias.requires_grad();
     auto out = Tensor(out_type, rt.allocator().allocate(out_type), need_grad);
 
@@ -669,7 +669,7 @@ Expected<void> Conv2DNode::apply(Runtime& rt, GradientMap& grads) {
 
     // d_input: conv transpose of grad_out with weight
     if (inputs_[0].requires_grad()) {
-        auto di_type = TensorType::contiguous({N, C, H, W}, inputs_[0].type().dtype());
+        auto di_type = TensorMetadata::contiguous({N, C, H, W}, inputs_[0].type().dtype());
         Tensor di(di_type, rt.allocator().allocate(di_type), false);
         TensorIterator<float> di_it(di);
         TensorIterator<const float> go_it(grad_out);
@@ -712,7 +712,7 @@ Expected<void> Conv2DNode::apply(Runtime& rt, GradientMap& grads) {
 
     // d_weight
     if (inputs_[1].requires_grad()) {
-        auto dw_type = TensorType::contiguous({OC, IC, KH, KW}, inputs_[1].type().dtype());
+        auto dw_type = TensorMetadata::contiguous({OC, IC, KH, KW}, inputs_[1].type().dtype());
         Tensor dw(dw_type, rt.allocator().allocate(dw_type), false);
         TensorIterator<float> dw_it(dw);
         TensorIterator<const float> inp_it(inputs_[0]);
@@ -751,7 +751,7 @@ Expected<void> Conv2DNode::apply(Runtime& rt, GradientMap& grads) {
 
     // d_bias: sum grad_out over N, H, W per output channel
     if (inputs_[2].defined() && inputs_[2].requires_grad() && inputs_[2].type().numel() > 0) {
-        auto db_type = TensorType::contiguous({OC}, DType::Float32);
+        auto db_type = TensorMetadata::contiguous({OC}, DType::Float32);
         Tensor db(db_type, rt.allocator().allocate(db_type), false);
         TensorIterator<float> db_it(db);
         TensorIterator<const float> go_it(grad_out);
@@ -791,7 +791,7 @@ Expected<Tensor> MaxPool2dOp::forward(Runtime& rt, const Tensor& input, int64_t 
     int64_t OH = (H - kernel) / stride + 1;
     int64_t OW = (W - kernel) / stride + 1;
 
-    auto out_type = TensorType::contiguous({N, C, OH, OW}, input.type().dtype());
+    auto out_type = TensorMetadata::contiguous({N, C, OH, OW}, input.type().dtype());
     auto out = Tensor(out_type, rt.allocator().allocate(out_type), input.requires_grad());
 
     RETURN_IF_ERROR(cpu::maxpool2d(out, input, kernel, stride));
@@ -811,7 +811,7 @@ Expected<void> MaxPool2dNode::apply(Runtime& rt, GradientMap& grads) {
     auto N = in_shape[0], C = in_shape[1], H = in_shape[2], W = in_shape[3];
     auto OH = output_.type().shape()[2], OW = output_.type().shape()[3];
 
-    auto dx_type = TensorType::contiguous({N, C, H, W}, inputs_[0].type().dtype());
+    auto dx_type = TensorMetadata::contiguous({N, C, H, W}, inputs_[0].type().dtype());
     Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
     TensorIterator<float> dx_it(dx);
     Tensor grad_out = grad_it->second;
@@ -868,7 +868,7 @@ Expected<Tensor> AvgPool2dOp::forward(Runtime& rt, const Tensor& input, int64_t 
     int64_t OH = (H - kernel) / stride + 1;
     int64_t OW = (W - kernel) / stride + 1;
 
-    auto out_type = TensorType::contiguous({N, C, OH, OW}, input.type().dtype());
+    auto out_type = TensorMetadata::contiguous({N, C, OH, OW}, input.type().dtype());
     auto out = Tensor(out_type, rt.allocator().allocate(out_type), input.requires_grad());
 
     RETURN_IF_ERROR(cpu::avgpool2d(out, input, kernel, stride));
@@ -888,7 +888,7 @@ Expected<void> AvgPool2dNode::apply(Runtime& rt, GradientMap& grads) {
     auto N = in_shape[0], C = in_shape[1], H = in_shape[2], W = in_shape[3];
     auto OH = output_.type().shape()[2], OW = output_.type().shape()[3];
 
-    auto dx_type = TensorType::contiguous({N, C, H, W}, inputs_[0].type().dtype());
+    auto dx_type = TensorMetadata::contiguous({N, C, H, W}, inputs_[0].type().dtype());
     Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
     TensorIterator<float> dx_it(dx);
     Tensor grad_out = grad_it->second;
@@ -930,7 +930,7 @@ Expected<Tensor> BatchNormOp::forward(Runtime& rt, const Tensor& input,
                                        const Tensor& gamma, const Tensor& beta,
                                        const Tensor& running_mean, const Tensor& running_var,
                                        float momentum, float epsilon, bool training) {
-    auto out_type = TensorType::contiguous(input.type().shape(), input.type().dtype());
+    auto out_type = TensorMetadata::contiguous(input.type().shape(), input.type().dtype());
     bool need_grad = input.requires_grad() || gamma.requires_grad() || beta.requires_grad();
     auto out = Tensor(out_type, rt.allocator().allocate(out_type), need_grad);
 
@@ -986,7 +986,7 @@ Expected<void> BatchNormNode::apply(Runtime& rt, GradientMap& grads) {
         inv_std[c] = 1.0f / std::sqrt(var[c] + epsilon_);
 
     if (inputs_[1].requires_grad()) {
-        auto dg_type = TensorType::contiguous({C}, DType::Float32);
+        auto dg_type = TensorMetadata::contiguous({C}, DType::Float32);
         Tensor dg(dg_type, rt.allocator().allocate(dg_type), false);
         TensorIterator<float> dg_it(dg);
 
@@ -1009,7 +1009,7 @@ Expected<void> BatchNormNode::apply(Runtime& rt, GradientMap& grads) {
     }
 
     if (inputs_[2].requires_grad()) {
-        auto db_type = TensorType::contiguous({C}, DType::Float32);
+        auto db_type = TensorMetadata::contiguous({C}, DType::Float32);
         Tensor db(db_type, rt.allocator().allocate(db_type), false);
         TensorIterator<float> db_it(db);
 
@@ -1030,7 +1030,7 @@ Expected<void> BatchNormNode::apply(Runtime& rt, GradientMap& grads) {
     }
 
     if (inputs_[0].requires_grad()) {
-        auto di_type = TensorType::contiguous(in_shape, DType::Float32);
+        auto di_type = TensorMetadata::contiguous(in_shape, DType::Float32);
         Tensor di(di_type, rt.allocator().allocate(di_type), false);
         TensorIterator<float> di_it(di);
 
@@ -1074,7 +1074,7 @@ Expected<void> BatchNormNode::apply(Runtime& rt, GradientMap& grads) {
 
 Expected<Tensor> LayerNormOp::forward(Runtime& rt, const Tensor& input,
                                        const Tensor& gamma, const Tensor& beta, float epsilon) {
-    auto out_type = TensorType::contiguous(input.type().shape(), input.type().dtype());
+    auto out_type = TensorMetadata::contiguous(input.type().shape(), input.type().dtype());
     bool need_grad = input.requires_grad() || gamma.requires_grad() || beta.requires_grad();
     auto out = Tensor(out_type, rt.allocator().allocate(out_type), need_grad);
 
@@ -1117,7 +1117,7 @@ Expected<void> LayerNormNode::apply(Runtime& rt, GradientMap& grads) {
     }
 
     if (inputs_[1].requires_grad()) {
-        auto dg_type = TensorType::contiguous({D}, DType::Float32);
+        auto dg_type = TensorMetadata::contiguous({D}, DType::Float32);
         Tensor dg(dg_type, rt.allocator().allocate(dg_type), false);
         TensorIterator<float> dg_it(dg);
 
@@ -1139,7 +1139,7 @@ Expected<void> LayerNormNode::apply(Runtime& rt, GradientMap& grads) {
     }
 
     if (inputs_[2].requires_grad()) {
-        auto db_type = TensorType::contiguous({D}, DType::Float32);
+        auto db_type = TensorMetadata::contiguous({D}, DType::Float32);
         Tensor db(db_type, rt.allocator().allocate(db_type), false);
         TensorIterator<float> db_it(db);
 
@@ -1158,7 +1158,7 @@ Expected<void> LayerNormNode::apply(Runtime& rt, GradientMap& grads) {
     }
 
     if (inputs_[0].requires_grad()) {
-        auto di_type = TensorType::contiguous(in_shape, DType::Float32);
+        auto di_type = TensorMetadata::contiguous(in_shape, DType::Float32);
         Tensor di(di_type, rt.allocator().allocate(di_type), false);
         TensorIterator<float> di_it(di);
 
@@ -1195,7 +1195,7 @@ Expected<void> LayerNormNode::apply(Runtime& rt, GradientMap& grads) {
 // ── GELUOp ────────────────────────────────────────────────────────────
 
 Expected<Tensor> GELUOp::forward(Runtime& rt, const Tensor& x) {
-    auto out_type = TensorType::contiguous(x.type().shape(), x.type().dtype());
+    auto out_type = TensorMetadata::contiguous(x.type().shape(), x.type().dtype());
     auto out = Tensor(out_type, rt.allocator().allocate(out_type), x.requires_grad());
 
     RETURN_IF_ERROR(cpu::gelu(out, x));
@@ -1214,7 +1214,7 @@ Expected<void> GELUNode::apply(Runtime& rt, GradientMap& grads) {
     }
     Tensor grad_out = grad_it->second;
 
-    auto dx_type = TensorType::contiguous(inputs_[0].type().shape(), inputs_[0].type().dtype());
+    auto dx_type = TensorMetadata::contiguous(inputs_[0].type().shape(), inputs_[0].type().dtype());
     Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
 
     TensorIterator<const float> x_it(inputs_[0]);
@@ -1254,7 +1254,7 @@ Expected<Tensor> ReshapeOp::forward(Runtime& rt, const Tensor& x, const std::vec
         return Error{"ReshapeOp: new shape has different number of elements"};
     }
 
-    auto new_type = TensorType::contiguous(new_shape, x.type().dtype());
+    auto new_type = TensorMetadata::contiguous(new_shape, x.type().dtype());
     bool need_grad = x.requires_grad();
     auto out = Tensor(new_type, x.storage(), need_grad, x.storage_offset());
 
@@ -1272,7 +1272,7 @@ Expected<void> ReshapeNode::apply(Runtime& rt, GradientMap& grads) {
     }
     Tensor grad_out = grad_it->second;
 
-    auto grad_type = TensorType::contiguous(inputs_[0].type().shape(), grad_out.type().dtype());
+    auto grad_type = TensorMetadata::contiguous(inputs_[0].type().shape(), grad_out.type().dtype());
     Tensor grad(grad_type, rt.allocator().allocate(grad_type), false);
 
     TensorIterator<float> grad_dst(grad);
@@ -1315,7 +1315,7 @@ Expected<Tensor> MeanOp::forward(Runtime& rt, const Tensor& x, const std::vector
     }
     if (out_shape.empty()) out_shape.push_back(1);
 
-    auto out_type = TensorType::contiguous(out_shape, x.type().dtype());
+    auto out_type = TensorMetadata::contiguous(out_shape, x.type().dtype());
     bool need_grad = x.requires_grad();
     auto out = Tensor(out_type, rt.allocator().allocate(out_type), need_grad);
 
@@ -1339,7 +1339,7 @@ Expected<void> MeanNode::apply(Runtime& rt, GradientMap& grads) {
     int64_t reduction_size = 1;
     for (auto d : dims_) reduction_size *= orig_shape[d];
 
-    auto dx_type = TensorType::contiguous(orig_shape, inputs_[0].type().dtype());
+    auto dx_type = TensorMetadata::contiguous(orig_shape, inputs_[0].type().dtype());
     Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
     TensorIterator<float> dx_it(dx);
     TensorIterator<const float> go_it(grad_out);
@@ -1390,7 +1390,7 @@ Expected<Tensor> TransposeOp::forward(Runtime& rt, const Tensor& x, int64_t dim1
     std::swap(swapped_shape[dim1], swapped_shape[dim2]);
     std::swap(swapped_strides[dim1], swapped_strides[dim2]);
 
-    TensorType out_type(swapped_shape, swapped_strides, x.type().dtype());
+    TensorMetadata out_type(swapped_shape, swapped_strides, x.type().dtype());
     bool need_grad = x.requires_grad();
     auto out = Tensor(out_type, x.storage(), need_grad, x.storage_offset());
 
@@ -1415,11 +1415,11 @@ Expected<void> TransposeNode::apply(Runtime& rt, GradientMap& grads) {
     auto grad_strides = grad_out.type().strides();
     std::swap(grad_shape[dim1_], grad_shape[dim2_]);
     std::swap(grad_strides[dim1_], grad_strides[dim2_]);
-    TensorType transposed_type(grad_shape, grad_strides, grad_out.type().dtype());
+    TensorMetadata transposed_type(grad_shape, grad_strides, grad_out.type().dtype());
     Tensor transposed_view(transposed_type, grad_out.storage(), false, grad_out.storage_offset());
 
     // Materialize as contiguous via strided TensorIterator copy
-    auto dx_type = TensorType::contiguous(in_shape, grad_out.type().dtype());
+    auto dx_type = TensorMetadata::contiguous(in_shape, grad_out.type().dtype());
     Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
     TensorIterator<const float> tv_it(transposed_view);
     TensorIterator<float> dx_it(dx);
@@ -1443,7 +1443,7 @@ Expected<void> TransposeNode::apply(Runtime& rt, GradientMap& grads) {
 Expected<void> Autograd::backward(Runtime& runtime, const Tensor& loss) {
     grads_.clear();
 
-    auto grad_loss_type = TensorType::contiguous(loss.type().shape(), loss.type().dtype());
+    auto grad_loss_type = TensorMetadata::contiguous(loss.type().shape(), loss.type().dtype());
     Tensor grad_loss(grad_loss_type, runtime.allocator().allocate(grad_loss_type), false);
     auto* ptr = grad_loss.data<float>();
     auto n = loss.type().numel();

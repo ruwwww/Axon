@@ -121,7 +121,7 @@ Axon/
 │   │                       # SGD, AdamW, CrossEntropyLossOp, MSELossOp, L1LossOp
 │   ├── runtime/            # Runtime (public API), Allocator
 │   ├── storage/            # Storage (aligned memory), QuantizationDescriptor
-│   └── tensor/             # Tensor, TensorType, TensorIterator
+│   └── tensor/             # Tensor, TensorMetadata, TensorIterator
 ├── src/                    # Implementation files (src/backend/cpu/ scalar/ & avx2/ translation units)
 ├── tests/                  # Catch2 v3 test suite (28 files, 193 tests)
 ├── examples/
@@ -178,7 +178,7 @@ Axon/
 |---|---|
 | Tensor | Lightweight copyable handle to n-dimensional data |
 | Storage | Reference-counted aligned memory block |
-| TensorType | Immutable shape/strides/dtype/device/quant descriptor |
+| TensorMetadata | Immutable shape/strides/dtype/device/quant descriptor |
 | Runtime | Execution context (allocator, autograd, training mode) |
 | KernelContext | Universal execution boundary containing output/input spans & attributes |
 | KernelRegistry | Central dispatcher mapping `(OpName, ISA)` to execution kernel pointers |

@@ -117,7 +117,7 @@ Expected<Tensor> ResNet18::forward(Runtime& rt, const Tensor& x) {
     auto shape = t.type().shape();
     int64_t N = shape[0], C = shape[1];
 
-    auto flat_type = TensorType::contiguous({N, C}, DType::Float32);
+    auto flat_type = TensorMetadata::contiguous({N, C}, DType::Float32);
     Tensor flat(flat_type, rt.allocator().allocate(flat_type), t.requires_grad());
     std::memcpy(flat.data<float>(), t.data<float>(), static_cast<size_t>(N * C) * 4);
 

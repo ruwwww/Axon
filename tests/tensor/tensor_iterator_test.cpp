@@ -83,11 +83,11 @@ TEST_CASE("TensorIterator strided path returns correct elements for transposed t
 
 TEST_CASE("TensorIterator handles non-zero storage_offset on contiguous tensor", "[tensor_iterator]") {
     Runtime rt;
-    auto storage = rt.allocator().allocate(TensorType::contiguous({8}, DType::Float32));
+    auto storage = rt.allocator().allocate(TensorMetadata::contiguous({8}, DType::Float32));
     auto* raw = static_cast<float*>(storage->data);
     for (int i = 0; i < 8; ++i) raw[i] = static_cast<float>(i + 100);
 
-    TensorType type({3}, {1}, DType::Float32);
+    TensorMetadata type({3}, {1}, DType::Float32);
     Tensor t(type, storage, false, 2);
 
     TensorIterator<float> it(t);
@@ -99,11 +99,11 @@ TEST_CASE("TensorIterator handles non-zero storage_offset on contiguous tensor",
 
 TEST_CASE("TensorIterator handles non-zero storage_offset on transposed tensor", "[tensor_iterator]") {
     Runtime rt;
-    auto storage = rt.allocator().allocate(TensorType::contiguous({12}, DType::Float32));
+    auto storage = rt.allocator().allocate(TensorMetadata::contiguous({12}, DType::Float32));
     auto* raw = static_cast<float*>(storage->data);
     for (int i = 0; i < 12; ++i) raw[i] = static_cast<float>(i + 1);
 
-    TensorType t_type({3, 2}, {1, 3}, DType::Float32);
+    TensorMetadata t_type({3, 2}, {1, 3}, DType::Float32);
     Tensor t(t_type, storage, false, 6);
 
     TensorIterator<float> it(t);

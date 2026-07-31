@@ -14,7 +14,7 @@ Expected<Tensor> Embedding::forward(Runtime& rt, const Tensor& x) {
     auto N = indices.type().numel();
     auto embedding_dim = weight_.tensor().type().shape()[1];
 
-    auto out_type = TensorType::contiguous({N, embedding_dim}, weight_.tensor().type().dtype());
+    auto out_type = TensorMetadata::contiguous({N, embedding_dim}, weight_.tensor().type().dtype());
     auto out = Tensor(out_type, rt.allocator().allocate(out_type), true);
 
     auto* idx_ptr = indices.data<const int64_t>();

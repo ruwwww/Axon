@@ -331,9 +331,9 @@ TEST_CASE("cpu::reduce_mean over all dims", "[backend][cpu]") {
 
 TEST_CASE("cpu::add on non-contiguous (transposed) inputs", "[backend][cpu][noncontig]") {
     Runtime rt;
-    auto storage_a = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
-    auto storage_b = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
-    auto storage_out = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage_a = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
+    auto storage_b = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
+    auto storage_out = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
     float a_vals[] = {1,2,3,4,5,6};
     float b_vals[] = {10,20,30,40,50,60};
     std::memcpy(storage_a->data, a_vals, 6 * sizeof(float));
@@ -341,7 +341,7 @@ TEST_CASE("cpu::add on non-contiguous (transposed) inputs", "[backend][cpu][nonc
     std::memset(storage_out->data, 0, 6 * sizeof(float));
 
     // Transposed layout: shape {3,2}, strides {1,3}
-    TensorType tt({3, 2}, {1, 3}, DType::Float32);
+    TensorMetadata tt({3, 2}, {1, 3}, DType::Float32);
     Tensor a(tt, storage_a, false, 0);
     Tensor b(tt, storage_b, false, 0);
     Tensor out(tt, storage_out, false, 0);
@@ -360,16 +360,16 @@ TEST_CASE("cpu::add on non-contiguous (transposed) inputs", "[backend][cpu][nonc
 
 TEST_CASE("cpu::sub on non-contiguous (transposed) inputs", "[backend][cpu][noncontig]") {
     Runtime rt;
-    auto storage_a = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
-    auto storage_b = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
-    auto storage_out = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage_a = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
+    auto storage_b = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
+    auto storage_out = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
     float a_vals[] = {10,20,30,40,50,60};
     float b_vals[] = {1,2,3,4,5,6};
     std::memcpy(storage_a->data, a_vals, 6 * sizeof(float));
     std::memcpy(storage_b->data, b_vals, 6 * sizeof(float));
     std::memset(storage_out->data, 0, 6 * sizeof(float));
 
-    TensorType tt({3, 2}, {1, 3}, DType::Float32);
+    TensorMetadata tt({3, 2}, {1, 3}, DType::Float32);
     Tensor a(tt, storage_a, false, 0);
     Tensor b(tt, storage_b, false, 0);
     Tensor out(tt, storage_out, false, 0);
@@ -388,16 +388,16 @@ TEST_CASE("cpu::sub on non-contiguous (transposed) inputs", "[backend][cpu][nonc
 
 TEST_CASE("cpu::mul on non-contiguous (transposed) inputs", "[backend][cpu][noncontig]") {
     Runtime rt;
-    auto storage_a = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
-    auto storage_b = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
-    auto storage_out = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage_a = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
+    auto storage_b = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
+    auto storage_out = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
     float a_vals[] = {1,2,3,4,5,6};
     float b_vals[] = {2,3,4,5,6,7};
     std::memcpy(storage_a->data, a_vals, 6 * sizeof(float));
     std::memcpy(storage_b->data, b_vals, 6 * sizeof(float));
     std::memset(storage_out->data, 0, 6 * sizeof(float));
 
-    TensorType tt({3, 2}, {1, 3}, DType::Float32);
+    TensorMetadata tt({3, 2}, {1, 3}, DType::Float32);
     Tensor a(tt, storage_a, false, 0);
     Tensor b(tt, storage_b, false, 0);
     Tensor out(tt, storage_out, false, 0);
@@ -416,9 +416,9 @@ TEST_CASE("cpu::mul on non-contiguous (transposed) inputs", "[backend][cpu][nonc
 
 TEST_CASE("cpu::div on non-contiguous (transposed) inputs", "[backend][cpu][noncontig]") {
     Runtime rt;
-    auto storage_a = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
-    auto storage_b = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
-    auto storage_out = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage_a = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
+    auto storage_b = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
+    auto storage_out = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
     // Transposed {3,2}, strides {1,3}: flat logical order = storage[0], storage[3], storage[1], storage[4], storage[2], storage[5]
     // Arrange storage so logical values are: a=[10,40,20,50,30,60], b=[2,4,5,5,10,6]
     float a_vals[] = {10, 20, 30, 40, 50, 60};   // storage
@@ -427,7 +427,7 @@ TEST_CASE("cpu::div on non-contiguous (transposed) inputs", "[backend][cpu][nonc
     std::memcpy(storage_b->data, b_vals, 6 * sizeof(float));
     std::memset(storage_out->data, 0, 6 * sizeof(float));
 
-    TensorType tt({3, 2}, {1, 3}, DType::Float32);
+    TensorMetadata tt({3, 2}, {1, 3}, DType::Float32);
     Tensor a(tt, storage_a, false, 0);
     Tensor b(tt, storage_b, false, 0);
     Tensor out(tt, storage_out, false, 0);
@@ -449,13 +449,13 @@ TEST_CASE("cpu::div on non-contiguous (transposed) inputs", "[backend][cpu][nonc
 
 TEST_CASE("cpu::relu on non-contiguous (transposed) input", "[backend][cpu][noncontig]") {
     Runtime rt;
-    auto storage_x = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
-    auto storage_out = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage_x = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
+    auto storage_out = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
     float x_vals[] = {-1, 2, -3, 4, -5, 6};
     std::memcpy(storage_x->data, x_vals, 6 * sizeof(float));
     std::memset(storage_out->data, 0, 6 * sizeof(float));
 
-    TensorType tt({3, 2}, {1, 3}, DType::Float32);
+    TensorMetadata tt({3, 2}, {1, 3}, DType::Float32);
     Tensor x(tt, storage_x, false, 0);
     Tensor out(tt, storage_out, false, 0);
 
@@ -473,8 +473,8 @@ TEST_CASE("cpu::relu on non-contiguous (transposed) input", "[backend][cpu][nonc
 
 TEST_CASE("cpu::gelu on non-contiguous (transposed) input", "[backend][cpu][noncontig]") {
     Runtime rt;
-    auto storage_x = rt.allocator().allocate(TensorType::contiguous({4}, DType::Float32));
-    auto storage_out = rt.allocator().allocate(TensorType::contiguous({4}, DType::Float32));
+    auto storage_x = rt.allocator().allocate(TensorMetadata::contiguous({4}, DType::Float32));
+    auto storage_out = rt.allocator().allocate(TensorMetadata::contiguous({4}, DType::Float32));
     // Transposed {2,2}, strides {1,2}: flat logical order = storage[0], storage[2], storage[1], storage[3]
     // Arrange storage so logical values are: [-2, -1, 0, 1]
     // storage = [-2, 0, -1, 1]
@@ -482,7 +482,7 @@ TEST_CASE("cpu::gelu on non-contiguous (transposed) input", "[backend][cpu][nonc
     std::memcpy(storage_x->data, x_vals, 4 * sizeof(float));
     std::memset(storage_out->data, 0, 4 * sizeof(float));
 
-    TensorType tt({2, 2}, {1, 2}, DType::Float32);
+    TensorMetadata tt({2, 2}, {1, 2}, DType::Float32);
     Tensor x(tt, storage_x, false, 0);
     Tensor out(tt, storage_out, false, 0);
 
@@ -500,8 +500,8 @@ TEST_CASE("cpu::gelu on non-contiguous (transposed) input", "[backend][cpu][nonc
 
 TEST_CASE("cpu::log_softmax on non-contiguous (transposed) input", "[backend][cpu][noncontig]") {
     Runtime rt;
-    auto storage_x = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
-    auto storage_out = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage_x = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
+    auto storage_out = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
     // Transposed {3,2}, strides {1,3}: flat logical order = storage[0],storage[3],storage[1],storage[4],storage[2],storage[5]
     // Row 0: flat 0,1 → storage[0],storage[3]
     // Row 1: flat 2,3 → storage[1],storage[4]
@@ -512,7 +512,7 @@ TEST_CASE("cpu::log_softmax on non-contiguous (transposed) input", "[backend][cp
     std::memcpy(storage_x->data, x_vals, 6 * sizeof(float));
     std::memset(storage_out->data, 0, 6 * sizeof(float));
 
-    TensorType tt({3, 2}, {1, 3}, DType::Float32);
+    TensorMetadata tt({3, 2}, {1, 3}, DType::Float32);
     Tensor x(tt, storage_x, false, 0);
     Tensor out(tt, storage_out, false, 0);
 
@@ -534,14 +534,14 @@ TEST_CASE("cpu::log_softmax on non-contiguous (transposed) input", "[backend][cp
 
 TEST_CASE("cpu::softmax on non-contiguous (transposed) input", "[backend][cpu][noncontig]") {
     Runtime rt;
-    auto storage_x = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
-    auto storage_out = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage_x = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
+    auto storage_out = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
     // Same layout as log_softmax test
     float x_vals[] = {1.0f, 3.0f, 5.0f, 2.0f, 4.0f, 6.0f};
     std::memcpy(storage_x->data, x_vals, 6 * sizeof(float));
     std::memset(storage_out->data, 0, 6 * sizeof(float));
 
-    TensorType tt({3, 2}, {1, 3}, DType::Float32);
+    TensorMetadata tt({3, 2}, {1, 3}, DType::Float32);
     Tensor x(tt, storage_x, false, 0);
     Tensor out(tt, storage_out, false, 0);
 
@@ -564,10 +564,10 @@ TEST_CASE("cpu::softmax on non-contiguous (transposed) input", "[backend][cpu][n
 
 TEST_CASE("cpu::matmul on non-contiguous (transposed) A", "[backend][cpu][noncontig]") {
     Runtime rt;
-    auto storage_a = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage_a = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
     float a_vals[] = {1.0f, 4.0f, 2.0f, 5.0f, 3.0f, 6.0f};
     std::memcpy(storage_a->data, a_vals, 6 * sizeof(float));
-    TensorType nc_type({2, 3}, {1, 2}, DType::Float32);
+    TensorMetadata nc_type({2, 3}, {1, 2}, DType::Float32);
     Tensor a_nc(nc_type, storage_a, false, 0);
 
     auto b = rt.empty({3, 2});
@@ -580,8 +580,8 @@ TEST_CASE("cpu::matmul on non-contiguous (transposed) A", "[backend][cpu][noncon
     auto out_ref = rt.empty({2, 2});
     cpu::matmul(out_ref, a_ref, b);
 
-    auto storage_out = rt.allocator().allocate(TensorType::contiguous({4}, DType::Float32));
-    Tensor out_nc(TensorType::contiguous({2, 2}, DType::Float32), storage_out, false, 0);
+    auto storage_out = rt.allocator().allocate(TensorMetadata::contiguous({4}, DType::Float32));
+    Tensor out_nc(TensorMetadata::contiguous({2, 2}, DType::Float32), storage_out, false, 0);
     auto result = cpu::matmul(out_nc, a_nc, b);
     REQUIRE(result);
 
@@ -592,10 +592,10 @@ TEST_CASE("cpu::matmul on non-contiguous (transposed) A", "[backend][cpu][noncon
 
 TEST_CASE("cpu::conv2d on non-contiguous input", "[backend][cpu][noncontig]") {
     Runtime rt;
-    auto storage_inp = rt.allocator().allocate(TensorType::contiguous({4}, DType::Float32));
+    auto storage_inp = rt.allocator().allocate(TensorMetadata::contiguous({4}, DType::Float32));
     float inp_vals[] = {1.0f, 3.0f, 2.0f, 4.0f};
     std::memcpy(storage_inp->data, inp_vals, 4 * sizeof(float));
-    TensorType inp_nc_type({1, 1, 2, 2}, {4, 4, 1, 2}, DType::Float32);
+    TensorMetadata inp_nc_type({1, 1, 2, 2}, {4, 4, 1, 2}, DType::Float32);
     Tensor inp_nc(inp_nc_type, storage_inp, false, 0);
 
     auto inp_ref = rt.empty({1, 1, 2, 2});
@@ -608,8 +608,8 @@ TEST_CASE("cpu::conv2d on non-contiguous input", "[backend][cpu][noncontig]") {
     auto out_ref = rt.empty({1, 1, 2, 2});
     cpu::conv2d(out_ref, inp_ref, weight, 1, 0);
 
-    auto storage_out = rt.allocator().allocate(TensorType::contiguous({4}, DType::Float32));
-    Tensor out_nc(TensorType::contiguous({1, 1, 2, 2}, DType::Float32), storage_out, false, 0);
+    auto storage_out = rt.allocator().allocate(TensorMetadata::contiguous({4}, DType::Float32));
+    Tensor out_nc(TensorMetadata::contiguous({1, 1, 2, 2}, DType::Float32), storage_out, false, 0);
     auto result = cpu::conv2d(out_nc, inp_nc, weight, 1, 0);
     REQUIRE(result);
 
@@ -620,10 +620,10 @@ TEST_CASE("cpu::conv2d on non-contiguous input", "[backend][cpu][noncontig]") {
 
 TEST_CASE("cpu::reduce_mean on non-contiguous input", "[backend][cpu][noncontig]") {
     Runtime rt;
-    auto storage_inp = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage_inp = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
     float inp_vals[] = {1.0f, 4.0f, 2.0f, 5.0f, 3.0f, 6.0f};
     std::memcpy(storage_inp->data, inp_vals, 6 * sizeof(float));
-    TensorType nc_type({2, 3}, {1, 2}, DType::Float32);
+    TensorMetadata nc_type({2, 3}, {1, 2}, DType::Float32);
     Tensor inp_nc(nc_type, storage_inp, false, 0);
 
     auto inp_ref = rt.empty({2, 3});
@@ -633,8 +633,8 @@ TEST_CASE("cpu::reduce_mean on non-contiguous input", "[backend][cpu][noncontig]
     auto out_ref = rt.empty({2});
     cpu::reduce_mean(out_ref, inp_ref, {1});
 
-    auto storage_out = rt.allocator().allocate(TensorType::contiguous({2}, DType::Float32));
-    Tensor out_nc(TensorType::contiguous({2}, DType::Float32), storage_out, false, 0);
+    auto storage_out = rt.allocator().allocate(TensorMetadata::contiguous({2}, DType::Float32));
+    Tensor out_nc(TensorMetadata::contiguous({2}, DType::Float32), storage_out, false, 0);
     auto result = cpu::reduce_mean(out_nc, inp_nc, {1});
     REQUIRE(result);
 
@@ -644,10 +644,10 @@ TEST_CASE("cpu::reduce_mean on non-contiguous input", "[backend][cpu][noncontig]
 
 TEST_CASE("cpu::batchnorm on non-contiguous input", "[backend][cpu][noncontig]") {
     Runtime rt;
-    auto storage_inp = rt.allocator().allocate(TensorType::contiguous({4}, DType::Float32));
+    auto storage_inp = rt.allocator().allocate(TensorMetadata::contiguous({4}, DType::Float32));
     float inp_vals[] = {1.0f, 3.0f, 2.0f, 4.0f};
     std::memcpy(storage_inp->data, inp_vals, 4 * sizeof(float));
-    TensorType inp_nc_type({1, 2, 1, 2}, {4, 1, 2, 2}, DType::Float32);
+    TensorMetadata inp_nc_type({1, 2, 1, 2}, {4, 1, 2, 2}, DType::Float32);
     Tensor inp_nc(inp_nc_type, storage_inp, false, 0);
 
     auto gamma = rt.ones({2});
@@ -661,8 +661,8 @@ TEST_CASE("cpu::batchnorm on non-contiguous input", "[backend][cpu][noncontig]")
     auto out_ref = rt.empty({1, 2, 1, 2});
     cpu::batchnorm(out_ref, inp_ref, gamma, beta, running_mean, running_var, 0.9f, 1e-5f, false);
 
-    auto storage_out = rt.allocator().allocate(TensorType::contiguous({4}, DType::Float32));
-    Tensor out_nc(TensorType::contiguous({1, 2, 1, 2}, DType::Float32), storage_out, false, 0);
+    auto storage_out = rt.allocator().allocate(TensorMetadata::contiguous({4}, DType::Float32));
+    Tensor out_nc(TensorMetadata::contiguous({1, 2, 1, 2}, DType::Float32), storage_out, false, 0);
     auto result = cpu::batchnorm(out_nc, inp_nc, gamma, beta, running_mean, running_var, 0.9f, 1e-5f, false);
     REQUIRE(result);
 
@@ -673,10 +673,10 @@ TEST_CASE("cpu::batchnorm on non-contiguous input", "[backend][cpu][noncontig]")
 
 TEST_CASE("cpu::layernorm on non-contiguous input", "[backend][cpu][noncontig]") {
     Runtime rt;
-    auto storage_inp = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage_inp = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
     float inp_vals[] = {1.0f, 4.0f, 2.0f, 5.0f, 3.0f, 6.0f};
     std::memcpy(storage_inp->data, inp_vals, 6 * sizeof(float));
-    TensorType nc_type({2, 3}, {1, 2}, DType::Float32);
+    TensorMetadata nc_type({2, 3}, {1, 2}, DType::Float32);
     Tensor inp_nc(nc_type, storage_inp, false, 0);
 
     auto gamma = rt.ones({3});
@@ -688,8 +688,8 @@ TEST_CASE("cpu::layernorm on non-contiguous input", "[backend][cpu][noncontig]")
     auto out_ref = rt.empty({2, 3});
     cpu::layernorm(out_ref, inp_ref, gamma, beta, 1e-5f);
 
-    auto storage_out = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
-    Tensor out_nc(TensorType::contiguous({2, 3}, DType::Float32), storage_out, false, 0);
+    auto storage_out = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
+    Tensor out_nc(TensorMetadata::contiguous({2, 3}, DType::Float32), storage_out, false, 0);
     auto result = cpu::layernorm(out_nc, inp_nc, gamma, beta, 1e-5f);
     REQUIRE(result);
 

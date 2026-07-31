@@ -53,7 +53,7 @@ static void test_kquant_roundtrip(QuantFormat fmt, size_t count, float margin, i
 
     size_t qsize = cpu::quantized_size(count, fmt);
     REQUIRE(qsize == expected_qsize);
-    auto qtype = TensorType::contiguous({static_cast<int64_t>(count)}, DType::Float32, Device::CPU);
+    auto qtype = TensorMetadata::contiguous({static_cast<int64_t>(count)}, DType::Float32, Device::CPU);
     StoragePtr qstorage = std::make_shared<Storage>(qsize);
     qstorage->quant = QuantizationDescriptor{fmt, static_cast<size_t>(block_size)};
     Tensor quantized(qtype, qstorage, false);
@@ -104,17 +104,17 @@ static void test_kquant_matmul(QuantFormat fmt, int64_t M, int64_t K, int64_t N,
     auto a_f32 = Tensor::randn(rt, {M, K});
     auto b_f32 = Tensor::randn(rt, {K, N});
 
-    auto ref_type = TensorType::contiguous({M, N}, DType::Float32);
+    auto ref_type = TensorMetadata::contiguous({M, N}, DType::Float32);
     Tensor ref(ref_type, rt.allocator().allocate(ref_type), false);
     cpu::matmul(ref, a_f32, b_f32);
 
     size_t a_qsize = cpu::quantized_size_2d(M, K, fmt);
     StoragePtr a_qstorage = std::make_shared<Storage>(a_qsize);
     a_qstorage->quant = QuantizationDescriptor{fmt, static_cast<size_t>(qblock)};
-    Tensor a_q(TensorType::contiguous({M, K}, DType::Float32, Device::CPU), a_qstorage, false);
+    Tensor a_q(TensorMetadata::contiguous({M, K}, DType::Float32, Device::CPU), a_qstorage, false);
     REQUIRE(cpu::quantize(a_q, a_f32, fmt));
 
-    auto out_type = TensorType::contiguous({M, N}, DType::Float32);
+    auto out_type = TensorMetadata::contiguous({M, N}, DType::Float32);
     Tensor out(out_type, rt.allocator().allocate(out_type), false);
 
     Expected<void> mm_result = Error{"test_kquant_matmul: unsupported format"};
@@ -164,17 +164,17 @@ TEST_CASE("Q4_0 matmul matches float32 matmul within tolerance", "[quant]") {
     auto a_f32 = Tensor::randn(rt, {4, 8});
     auto b_f32 = Tensor::randn(rt, {8, 2});
 
-    auto ref_type = TensorType::contiguous({4, 2}, DType::Float32);
+    auto ref_type = TensorMetadata::contiguous({4, 2}, DType::Float32);
     Tensor ref(ref_type, rt.allocator().allocate(ref_type), false);
     cpu::matmul(ref, a_f32, b_f32);
 
     size_t a_qsize = cpu::quantized_size_2d(4, 8, QuantFormat::Q4_0);
     StoragePtr a_qstorage = std::make_shared<Storage>(a_qsize);
     a_qstorage->quant = QuantizationDescriptor{QuantFormat::Q4_0, 32};
-    Tensor a_q(TensorType::contiguous({4, 8}, DType::Float32, Device::CPU), a_qstorage, false);
+    Tensor a_q(TensorMetadata::contiguous({4, 8}, DType::Float32, Device::CPU), a_qstorage, false);
     REQUIRE(cpu::quantize(a_q, a_f32, QuantFormat::Q4_0));
 
-    auto out_type = TensorType::contiguous({4, 2}, DType::Float32);
+    auto out_type = TensorMetadata::contiguous({4, 2}, DType::Float32);
     Tensor out(out_type, rt.allocator().allocate(out_type), false);
     auto mm_result = cpu::matmul_q4(out, a_q, b_f32);
     REQUIRE(mm_result);
@@ -195,17 +195,17 @@ TEST_CASE("Q4_0 matmul with known values", "[quant]") {
     memcpy(a_f32.data<float>(), a_data, 8 * sizeof(float));
     memcpy(b_f32.data<float>(), b_data, 8 * sizeof(float));
 
-    auto ref_type = TensorType::contiguous({2, 2}, DType::Float32);
+    auto ref_type = TensorMetadata::contiguous({2, 2}, DType::Float32);
     Tensor ref(ref_type, rt.allocator().allocate(ref_type), false);
     cpu::matmul(ref, a_f32, b_f32);
 
     size_t a_qsize = cpu::quantized_size_2d(2, 4, QuantFormat::Q4_0);
     StoragePtr a_qstorage = std::make_shared<Storage>(a_qsize);
     a_qstorage->quant = QuantizationDescriptor{QuantFormat::Q4_0, 32};
-    Tensor a_q(TensorType::contiguous({2, 4}, DType::Float32, Device::CPU), a_qstorage, false);
+    Tensor a_q(TensorMetadata::contiguous({2, 4}, DType::Float32, Device::CPU), a_qstorage, false);
     REQUIRE(cpu::quantize(a_q, a_f32, QuantFormat::Q4_0));
 
-    auto out_type = TensorType::contiguous({2, 2}, DType::Float32);
+    auto out_type = TensorMetadata::contiguous({2, 2}, DType::Float32);
     Tensor out(out_type, rt.allocator().allocate(out_type), false);
     REQUIRE(cpu::matmul_q4(out, a_q, b_f32));
 

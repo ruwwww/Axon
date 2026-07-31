@@ -4,19 +4,19 @@
 #include <memory>
 #include "axon/core/types.h"
 #include "axon/storage/storage.h"
-#include "axon/tensor/tensor_type.h"
+#include "axon/tensor/tensor_metadata.h"
 
 namespace axon {
 
 class TensorImpl {
 public:
     TensorId id_;
-    TensorType type_;
+    TensorMetadata type_;
     StoragePtr storage_;
     int64_t storage_offset_ = 0;
     bool requires_grad_ = false;
 
-    TensorImpl(TensorId id, TensorType type, StoragePtr storage, bool requires_grad, int64_t storage_offset)
+    TensorImpl(TensorId id, TensorMetadata type, StoragePtr storage, bool requires_grad, int64_t storage_offset)
         : id_(id)
         , type_(std::move(type))
         , storage_(std::move(storage))

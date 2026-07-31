@@ -263,7 +263,7 @@ TEST_CASE("ReLUOp backward with non-contiguous input uses correct strides", "[au
     auto base = Tensor::zeros(rt, {6});
     float base_data[] = {-2, -1, 0, 1, 2, 3};
     std::memcpy(base.data<float>(), base_data, 6 * sizeof(float));
-    TensorType view_type({3, 2}, {1, 3}, DType::Float32);
+    TensorMetadata view_type({3, 2}, {1, 3}, DType::Float32);
     Tensor x(view_type, base.storage(), false);
 
     // Contiguous grad_out shape [3,2]
@@ -272,7 +272,7 @@ TEST_CASE("ReLUOp backward with non-contiguous input uses correct strides", "[au
     std::memcpy(go.data<float>(), go_data, 6 * sizeof(float));
 
     // dx is allocated by backward as contiguous [3,2]
-    auto dx_type = TensorType::contiguous({3, 2}, DType::Float32);
+    auto dx_type = TensorMetadata::contiguous({3, 2}, DType::Float32);
     Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
 
     // Manually run what ReLUOp::backward does with TensorIterator
@@ -298,7 +298,7 @@ TEST_CASE("GELUOp backward with non-contiguous input uses correct strides", "[au
     float* b = base.data<float>();
     // logical(0,0)=0, logical(0,1)=1, logical(1,0)=2, logical(1,1)=3, logical(2,0)=4, logical(2,1)=5
     b[0]=0; b[3]=1; b[1]=2; b[4]=3; b[2]=4; b[5]=5;
-    TensorType view_type({3, 2}, {1, 3}, DType::Float32);
+    TensorMetadata view_type({3, 2}, {1, 3}, DType::Float32);
     Tensor x(view_type, base.storage(), false);
 
     // Contiguous grad_out has matching logical values 10..15
@@ -306,7 +306,7 @@ TEST_CASE("GELUOp backward with non-contiguous input uses correct strides", "[au
     float go_data[] = {10, 11, 12, 13, 14, 15};
     std::memcpy(go.data<float>(), go_data, 6 * sizeof(float));
 
-    auto dx_type = TensorType::contiguous({3, 2}, DType::Float32);
+    auto dx_type = TensorMetadata::contiguous({3, 2}, DType::Float32);
     Tensor dx(dx_type, rt.allocator().allocate(dx_type), false);
 
     TensorIterator<const float> x_it(x);
@@ -348,7 +348,7 @@ TEST_CASE("MSELossOp backward with non-contiguous input uses correct strides", "
     auto pred_base = Tensor::zeros(rt, {6});
     float* pb = pred_base.data<float>();
     pb[0]=0; pb[3]=1; pb[1]=2; pb[4]=3; pb[2]=4; pb[5]=5;  // logical: 0,1,2,3,4,5
-    TensorType view_type({3, 2}, {1, 3}, DType::Float32);
+    TensorMetadata view_type({3, 2}, {1, 3}, DType::Float32);
     Tensor pred(view_type, pred_base.storage(), false);
 
     auto target_base = Tensor::zeros(rt, {6});
@@ -356,7 +356,7 @@ TEST_CASE("MSELossOp backward with non-contiguous input uses correct strides", "
     tb[0]=5; tb[3]=4; tb[1]=3; tb[4]=2; tb[2]=1; tb[5]=0;  // logical: 5,4,3,2,1,0
     Tensor target(view_type, target_base.storage(), false);
 
-    auto dp_type = TensorType::contiguous({3, 2}, DType::Float32);
+    auto dp_type = TensorMetadata::contiguous({3, 2}, DType::Float32);
     Tensor dp(dp_type, rt.allocator().allocate(dp_type), false);
 
     TensorIterator<const float> p_it(pred);
@@ -382,7 +382,7 @@ TEST_CASE("L1LossOp backward with non-contiguous input uses correct strides", "[
     auto pred_base = Tensor::zeros(rt, {6});
     float* pb = pred_base.data<float>();
     pb[0]=0; pb[3]=1; pb[1]=2; pb[4]=3; pb[2]=4; pb[5]=5;  // logical: 0,1,2,3,4,5
-    TensorType view_type({3, 2}, {1, 3}, DType::Float32);
+    TensorMetadata view_type({3, 2}, {1, 3}, DType::Float32);
     Tensor pred(view_type, pred_base.storage(), false);
 
     auto target_base = Tensor::zeros(rt, {6});
@@ -390,7 +390,7 @@ TEST_CASE("L1LossOp backward with non-contiguous input uses correct strides", "[
     tb[0]=5; tb[3]=4; tb[1]=3; tb[4]=2; tb[2]=1; tb[5]=0;  // logical: 5,4,3,2,1,0
     Tensor target(view_type, target_base.storage(), false);
 
-    auto dp_type = TensorType::contiguous({3, 2}, DType::Float32);
+    auto dp_type = TensorMetadata::contiguous({3, 2}, DType::Float32);
     Tensor dp(dp_type, rt.allocator().allocate(dp_type), false);
 
     TensorIterator<const float> p_it(pred);
@@ -423,14 +423,14 @@ TEST_CASE("CrossEntropyLossOp backward with non-contiguous log_softmax uses corr
     float* lb = ls_base.data<float>();
     lb[0] = -1.0f; lb[2] = -0.5f; lb[4] = -1.5f;   // row 0 logical: -1, -0.5, -1.5
     lb[1] = -2.0f; lb[3] = -0.8f; lb[5] = -0.3f;   // row 1 logical: -2, -0.8, -0.3
-    TensorType view_type({2, 3}, {1, 2}, DType::Float32);
+    TensorMetadata view_type({2, 3}, {1, 2}, DType::Float32);
     Tensor log_softmax_out(view_type, ls_base.storage(), false);
 
     auto targets = Tensor::empty(rt, {2});
     targets.data<int64_t>()[0] = 0;
     targets.data<int64_t>()[1] = 2;
 
-    auto dlogits_type = TensorType::contiguous({2, 3}, DType::Float32);
+    auto dlogits_type = TensorMetadata::contiguous({2, 3}, DType::Float32);
     Tensor dlogits(dlogits_type, rt.allocator().allocate(dlogits_type), false);
 
     TensorIterator<const float> ls_it(log_softmax_out);
@@ -467,10 +467,10 @@ TEST_CASE("AddOp backward with non-contiguous grad_out uses correct strides", "[
     auto go_base = Tensor::zeros(rt, {6});
     float* gb = go_base.data<float>();
     gb[0]=0; gb[3]=1; gb[1]=2; gb[4]=3; gb[2]=4; gb[5]=5;
-    TensorType view_type({3, 2}, {1, 3}, DType::Float32);
+    TensorMetadata view_type({3, 2}, {1, 3}, DType::Float32);
     Tensor grad_out(view_type, go_base.storage(), false);
 
-    auto da_type = TensorType::contiguous({3, 2}, DType::Float32);
+    auto da_type = TensorMetadata::contiguous({3, 2}, DType::Float32);
     Tensor da(da_type, rt.allocator().allocate(da_type), false);
 
     TensorIterator<const float> go_it(grad_out);
@@ -493,12 +493,12 @@ TEST_CASE("AddOp backward bias-sum with non-contiguous grad_out uses correct str
     auto go_base = Tensor::zeros(rt, {8});
     float go_data[] = {10, 20, 30, 40, 50, 60};
     std::memcpy(go_base.data<float>(), go_data, 6 * sizeof(float));
-    TensorType go_view_type({2, 3}, {1, 2}, DType::Float32);
+    TensorMetadata go_view_type({2, 3}, {1, 2}, DType::Float32);
     Tensor grad_out(go_view_type, go_base.storage(), false);
 
     // Bias sum C=3
     int64_t M = 2, N = 3;
-    auto db_type = TensorType::contiguous({3}, DType::Float32);
+    auto db_type = TensorMetadata::contiguous({3}, DType::Float32);
     Tensor db(db_type, rt.allocator().allocate(db_type), false);
     auto* db_ptr = db.data<float>();
 
@@ -537,11 +537,11 @@ TEST_CASE("MatMulOp backward with non-contiguous grad_out uses correct strides",
     auto go_base = Tensor::zeros(rt, {8});
     float go_data[] = {1, 2, 3, 4, 5, 6};
     std::memcpy(go_base.data<float>(), go_data, 6 * sizeof(float));
-    TensorType go_view_type({2, 2}, {1, 2}, DType::Float32);
+    TensorMetadata go_view_type({2, 2}, {1, 2}, DType::Float32);
     Tensor grad_out(go_view_type, go_base.storage(), false);
 
     // Compute da = grad_out @ b^T  (M x K)
-    auto da_type = TensorType::contiguous({M, K}, DType::Float32);
+    auto da_type = TensorMetadata::contiguous({M, K}, DType::Float32);
     Tensor da(da_type, rt.allocator().allocate(da_type), false);
 
     TensorIterator<const float> go_it(grad_out);
@@ -1028,7 +1028,7 @@ TEST_CASE("TransposeOp backward with non-contiguous grad_out uses correct stride
     float base_data[] = {10, 11, 12, 13, 14, 15};
     std::memcpy(base.data<float>(), base_data, 6 * sizeof(float));
     // View with swapped strides [1,3] (non-contiguous)
-    TensorType view_type({3, 2}, {1, 3}, DType::Float32);
+    TensorMetadata view_type({3, 2}, {1, 3}, DType::Float32);
     Tensor grad_out(view_type, base.storage(), false);
 
     // Place in GradientMap keyed by y's id
@@ -1091,11 +1091,11 @@ TEST_CASE("TransposeOp forward propagates storage_offset unchanged", "[operation
 
 TEST_CASE("TransposeOp forward data<T>() returns same address as original on view", "[operation][offset]") {
     Runtime rt;
-    auto storage = rt.allocator().allocate(TensorType::contiguous({6}, DType::Float32));
+    auto storage = rt.allocator().allocate(TensorMetadata::contiguous({6}, DType::Float32));
     auto* raw = static_cast<float*>(storage->data);
     for (int i = 0; i < 6; ++i) raw[i] = static_cast<float>(i + 1);
 
-    TensorType orig_type({2, 3}, {3, 1}, DType::Float32);
+    TensorMetadata orig_type({2, 3}, {3, 1}, DType::Float32);
     Tensor x(orig_type, storage, false, 0);
 
     auto result = rt.transpose(x, 0, 1);
@@ -1109,13 +1109,13 @@ TEST_CASE("TransposeOp forward data<T>() returns same address as original on vie
 TEST_CASE("TransposeOp forward with non-zero storage_offset keeps data pointer correct", "[operation][offset]") {
     Runtime rt;
     // Create underlying storage with 8 elements
-    auto storage = rt.allocator().allocate(TensorType::contiguous({8}, DType::Float32));
+    auto storage = rt.allocator().allocate(TensorMetadata::contiguous({8}, DType::Float32));
     auto* raw = static_cast<float*>(storage->data);
     for (int i = 0; i < 8; ++i) raw[i] = static_cast<float>(i + 100);
 
     // Create a tensor with offset 2, shape {2,3}, contiguous strides {3,1}
     // pointing at elements [2..7] of storage: {102, 103, 104, 105, 106, 107}
-    TensorType x_type({2, 3}, {3, 1}, DType::Float32);
+    TensorMetadata x_type({2, 3}, {3, 1}, DType::Float32);
     Tensor x(x_type, storage, false, 2);
 
     REQUIRE(x.storage_offset() == 2);
@@ -1144,12 +1144,12 @@ TEST_CASE("ReshapeOp forward propagates storage_offset unchanged", "[operation][
 
 TEST_CASE("ReshapeOp forward with non-zero storage_offset", "[operation][offset]") {
     Runtime rt;
-    auto storage = rt.allocator().allocate(TensorType::contiguous({12}, DType::Float32));
+    auto storage = rt.allocator().allocate(TensorMetadata::contiguous({12}, DType::Float32));
     auto* raw = static_cast<float*>(storage->data);
     for (int i = 0; i < 12; ++i) raw[i] = static_cast<float>(i + 1);
 
     // Create a tensor with offset 2, shape {2,5} — but {2,5}=10 elems, + offset 2 = 12, fits in storage
-    TensorType x_type({2, 5}, {5, 1}, DType::Float32);
+    TensorMetadata x_type({2, 5}, {5, 1}, DType::Float32);
     Tensor x(x_type, storage, false, 2);
 
     REQUIRE(x.storage_offset() == 2);
@@ -1202,7 +1202,7 @@ TEST_CASE("ReshapeOp backward with non-contiguous grad_out uses TensorIterator",
     auto base = Tensor::zeros(rt, {6});
     float base_data[] = {10, 20, 30, 40, 50, 60};
     std::memcpy(base.data<float>(), base_data, 6 * sizeof(float));
-    TensorType view_type({3, 2}, {1, 3}, DType::Float32);
+    TensorMetadata view_type({3, 2}, {1, 3}, DType::Float32);
     Tensor x(view_type, base.storage(), false, 0);
     x.set_requires_grad(true);
 
@@ -1276,7 +1276,7 @@ TEST_CASE("MSELossOp forward with non-contiguous inputs uses TensorIterator", "[
     auto pred_base = Tensor::zeros(rt, {6});
     float* pb = pred_base.data<float>();
     pb[0]=0; pb[3]=1; pb[1]=2; pb[4]=3; pb[2]=4; pb[5]=5;
-    TensorType view_type({3, 2}, {1, 3}, DType::Float32);
+    TensorMetadata view_type({3, 2}, {1, 3}, DType::Float32);
     Tensor pred(view_type, pred_base.storage(), false);
 
     auto target_base = Tensor::zeros(rt, {6});
@@ -1296,7 +1296,7 @@ TEST_CASE("L1LossOp forward with non-contiguous inputs uses TensorIterator", "[a
     auto pred_base = Tensor::zeros(rt, {6});
     float* pb = pred_base.data<float>();
     pb[0]=0; pb[3]=1; pb[1]=2; pb[4]=3; pb[2]=4; pb[5]=5;
-    TensorType view_type({3, 2}, {1, 3}, DType::Float32);
+    TensorMetadata view_type({3, 2}, {1, 3}, DType::Float32);
     Tensor pred(view_type, pred_base.storage(), false);
 
     auto target_base = Tensor::zeros(rt, {6});
@@ -1316,7 +1316,7 @@ TEST_CASE("CrossEntropyLossOp forward with non-contiguous logits uses TensorIter
     float* lb = logits_base.data<float>();
     lb[0] = 1.0f; lb[2] = 2.0f; lb[4] = 0.5f;
     lb[1] = 0.0f; lb[3] = 1.0f; lb[5] = 3.0f;
-    TensorType view_type({2, 3}, {1, 2}, DType::Float32);
+    TensorMetadata view_type({2, 3}, {1, 2}, DType::Float32);
     Tensor logits(view_type, logits_base.storage(), false);
 
     Tensor targets = Tensor::empty(rt, {2});

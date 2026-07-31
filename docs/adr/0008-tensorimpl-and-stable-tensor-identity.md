@@ -37,15 +37,15 @@ TensorImpl (logical tensor object)
 
 - **`Tensor` becomes a lightweight handle**: It holds a pointer/reference to a shared, immutable `TensorImpl`. Copying a `Tensor` copies only the handle. Multiple `Tensor` objects referring to the same logical tensor share the same `TensorImpl`.
 - **`TensorId` lives in `TensorImpl`**: Logical tensor identity is stable across all copies of the handle. `tensor.id()` returns `impl->id()`.
-- **`TensorType` continues to describe properties only**: `TensorType` describes dtype, shape, layout, and device. It does **not** contain identity information. Identity is a property of the logical tensor object, not its type.
+- **`TensorMetadata` continues to describe properties only**: `TensorMetadata` describes dtype, shape, layout, and device. It does **not** contain identity information. Identity is a property of the logical tensor object, not its metadata.
 - **Autograd `Node` stores `std::vector<Tensor>` by value**: Because all copies share the same `TensorImpl`, `inputs_[i].id()` is always stable. The current `input_ids_` workaround becomes unnecessary and is removed.
 - **Backward propagation uses stable IDs**: `GradientMap` lookups in `Node::apply()` use `inputs_[i].id()` directly. No silent failures from identity mismatch.
 
 ## Explicitly Rejected
 
-**Storing `TensorId` inside `TensorType`.**
+**Storing `TensorId` inside `TensorMetadata`.**
 
-`TensorType` is a descriptor of a tensor's shape, layout, dtype, and device. Two tensors can have the same type (e.g., `Float32[3, 4]` on CPU) but be completely different logical tensors with different identities. Identity is orthogonal to type and must not be encoded in `TensorType`.
+`TensorMetadata` is a descriptor of a tensor's shape, layout, dtype, and device. Two tensors can have the same metadata (e.g., `Float32[3, 4]` on CPU) but be completely different logical tensors with different identities. Identity is orthogonal to metadata and must not be encoded in `TensorMetadata`.
 
 ## Architectural Goals
 

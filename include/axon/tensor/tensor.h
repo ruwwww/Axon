@@ -6,7 +6,7 @@
 #include "axon/core/types.h"
 #include "axon/storage/storage.h"
 #include "axon/tensor/tensor_impl.h"
-#include "axon/tensor/tensor_type.h"
+#include "axon/tensor/tensor_metadata.h"
 
 namespace axon {
 
@@ -16,7 +16,7 @@ class Tensor {
 public:
     Tensor() = default;
 
-    Tensor(TensorType type, StoragePtr storage, bool requires_grad = false, int64_t storage_offset = 0)
+    Tensor(TensorMetadata type, StoragePtr storage, bool requires_grad = false, int64_t storage_offset = 0)
         : impl_(std::make_shared<TensorImpl>(next_id(), std::move(type), std::move(storage), requires_grad, storage_offset)) {}
 
     static Tensor empty(Runtime& rt, const std::vector<int64_t>& shape, DType dtype = DType::Float32);
@@ -25,7 +25,7 @@ public:
     static Tensor randn(Runtime& rt, const std::vector<int64_t>& shape, DType dtype = DType::Float32);
 
     TensorId id() const { return impl_ ? impl_->id_ : 0; }
-    const TensorType& type() const { return impl_ ? impl_->type_ : default_type_; }
+    const TensorMetadata& type() const { return impl_ ? impl_->type_ : default_type_; }
     StoragePtr storage() const { return impl_ ? impl_->storage_ : nullptr; }
     bool requires_grad() const { return impl_ ? impl_->requires_grad_ : false; }
 
@@ -47,7 +47,7 @@ public:
 private:
     TensorImplPtr impl_;
     std::shared_ptr<Tensor> grad_;
-    static TensorType default_type_;
+    static TensorMetadata default_type_;
 
     static TensorId next_id() {
         static TensorId counter = 0;

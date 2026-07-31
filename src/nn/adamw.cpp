@@ -11,8 +11,8 @@ AdamW::AdamW(Runtime& rt, std::vector<Parameter*> params, float lr,
 {
     for (auto* p : params_) {
         const auto& shape = p->tensor().type().shape();
-        auto m_type = TensorType::contiguous(shape, p->tensor().type().dtype());
-        auto v_type = TensorType::contiguous(shape, p->tensor().type().dtype());
+        auto m_type = TensorMetadata::contiguous(shape, p->tensor().type().dtype());
+        auto v_type = TensorMetadata::contiguous(shape, p->tensor().type().dtype());
         Tensor m(m_type, rt_.allocator().allocate(m_type), false);
         Tensor v(v_type, rt_.allocator().allocate(v_type), false);
         memset(m.storage()->data, 0, m.storage()->size_bytes);

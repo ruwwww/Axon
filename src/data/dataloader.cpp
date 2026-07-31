@@ -34,11 +34,11 @@ std::vector<DataLoader::Batch> DataLoader::iter() {
         std::vector<int64_t> batch_targ_shape = {static_cast<int64_t>(bs)};
         batch_targ_shape.insert(batch_targ_shape.end(), targ_shape.begin(), targ_shape.end());
 
-        auto batch_in_type = TensorType::contiguous(batch_in_shape, first_input.type().dtype());
+        auto batch_in_type = TensorMetadata::contiguous(batch_in_shape, first_input.type().dtype());
         auto batch_in_storage = std::make_shared<Storage>(batch_in_type.size_bytes());
         Tensor batch_in(batch_in_type, batch_in_storage, false);
 
-        auto batch_targ_type = TensorType::contiguous(batch_targ_shape, first_target.type().dtype());
+        auto batch_targ_type = TensorMetadata::contiguous(batch_targ_shape, first_target.type().dtype());
         auto batch_targ_storage = std::make_shared<Storage>(batch_targ_type.size_bytes());
         Tensor batch_targ(batch_targ_type, batch_targ_storage, false);
 

@@ -7,11 +7,11 @@
 
 namespace axon {
 
-class TensorType {
+class TensorMetadata {
 public:
-    TensorType() = default;
+    TensorMetadata() = default;
 
-    TensorType(
+    TensorMetadata(
         std::vector<int64_t> shape,
         std::vector<int64_t> strides,
         DType dtype,
@@ -23,9 +23,9 @@ public:
       , device_(device)
       , quant_(quant) {}
 
-    static TensorType contiguous(std::vector<int64_t> shape, DType dtype, Device device = Device::CPU) {
+    static TensorMetadata contiguous(std::vector<int64_t> shape, DType dtype, Device device = Device::CPU) {
         auto strides = compute_strides(shape);
-        return TensorType(std::move(shape), std::move(strides), dtype, device, QuantFormat::None);
+        return TensorMetadata(std::move(shape), std::move(strides), dtype, device, QuantFormat::None);
     }
 
     const std::vector<int64_t>& shape() const { return shape_; }

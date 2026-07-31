@@ -85,7 +85,7 @@ size_t MNIST::size() const {
 
 std::pair<Tensor, Tensor> MNIST::get(size_t index) {
     // Image tensor: shape {784}, dtype Float32, normalized to [0,1]
-    auto img_type = TensorType::contiguous({impl_->rows * impl_->cols}, DType::Float32);
+    auto img_type = TensorMetadata::contiguous({impl_->rows * impl_->cols}, DType::Float32);
     auto img_storage = std::make_shared<Storage>(img_type.size_bytes());
     Tensor img_tensor(img_type, img_storage, false);
     auto* img_ptr = img_tensor.data<float>();
@@ -96,7 +96,7 @@ std::pair<Tensor, Tensor> MNIST::get(size_t index) {
     }
 
     // Label tensor: shape {1}, dtype Int64
-    auto lbl_type = TensorType::contiguous({1}, DType::Int64);
+    auto lbl_type = TensorMetadata::contiguous({1}, DType::Int64);
     auto lbl_storage = std::make_shared<Storage>(lbl_type.size_bytes());
     Tensor lbl_tensor(lbl_type, lbl_storage, false);
     lbl_tensor.data<int64_t>()[0] = static_cast<int64_t>(impl_->labels[index]);

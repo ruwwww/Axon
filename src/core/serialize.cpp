@@ -109,7 +109,7 @@ Expected<Tensor> load_tensor(Runtime& rt, const std::string& path) {
     std::vector<int64_t> shape(shape_u64.begin(), shape_u64.end());
     auto dtype = static_cast<DType>(h.dtype);
 
-    auto type = TensorType::contiguous(std::move(shape), dtype, Device::CPU);
+    auto type = TensorMetadata::contiguous(std::move(shape), dtype, Device::CPU);
     auto storage = rt.allocator().allocate(type);
 
     if (data_bytes != storage->size_bytes) {

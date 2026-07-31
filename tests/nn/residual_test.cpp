@@ -9,7 +9,7 @@ using namespace axon;
 
 struct IdentityModule : Module {
     Expected<Tensor> forward(Runtime& rt, const Tensor& x) override {
-        auto out_type = TensorType::contiguous(x.type().shape(), x.type().dtype());
+        auto out_type = TensorMetadata::contiguous(x.type().shape(), x.type().dtype());
         auto out = Tensor(out_type, rt.allocator().allocate(out_type), false);
         auto* o_ptr = out.data<float>();
         auto* x_ptr = x.data<const float>();

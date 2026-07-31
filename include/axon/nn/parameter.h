@@ -16,7 +16,7 @@ public:
 
     Tensor& grad() {
         if (!grad_) {
-            auto type = TensorType::contiguous(tensor_.type().shape(), tensor_.type().dtype());
+            auto type = TensorMetadata::contiguous(tensor_.type().shape(), tensor_.type().dtype());
             auto storage = std::make_shared<Storage>(type.size_bytes());
             grad_ = std::make_unique<Tensor>(std::move(type), std::move(storage), false);
             memset(grad_->storage()->data, 0, grad_->storage()->size_bytes);

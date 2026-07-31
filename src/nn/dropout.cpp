@@ -9,7 +9,7 @@ Dropout::Dropout(float p) : p_(p) {}
 Expected<Tensor> Dropout::forward(Runtime& rt, const Tensor& x) {
     if (!is_training() || p_ <= 0.0f) {
         // No-op during eval or when p=0
-        auto out_type = TensorType::contiguous(x.type().shape(), x.type().dtype());
+        auto out_type = TensorMetadata::contiguous(x.type().shape(), x.type().dtype());
         auto out = Tensor(out_type, rt.allocator().allocate(out_type), x.requires_grad());
         auto* x_ptr = x.data<const float>();
         auto* o_ptr = out.data<float>();
@@ -18,7 +18,7 @@ Expected<Tensor> Dropout::forward(Runtime& rt, const Tensor& x) {
         return out;
     }
 
-    auto out_type = TensorType::contiguous(x.type().shape(), x.type().dtype());
+    auto out_type = TensorMetadata::contiguous(x.type().shape(), x.type().dtype());
     auto out = Tensor(out_type, rt.allocator().allocate(out_type), x.requires_grad());
     auto* x_ptr = x.data<const float>();
     auto* o_ptr = out.data<float>();

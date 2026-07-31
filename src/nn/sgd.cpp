@@ -8,7 +8,7 @@ SGD::SGD(Runtime& rt, std::vector<Parameter*> params, float lr, float momentum)
 {
     if (momentum_ > 0.0f) {
         for (auto* p : params_) {
-            auto type = TensorType::contiguous(p->tensor().type().shape(), p->tensor().type().dtype());
+            auto type = TensorMetadata::contiguous(p->tensor().type().shape(), p->tensor().type().dtype());
             auto buf = Tensor(type, rt_.allocator().allocate(type), false);
             memset(buf.storage()->data, 0, buf.storage()->size_bytes);
             momentum_bufs_.push_back(std::move(buf));

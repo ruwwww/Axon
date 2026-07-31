@@ -11,7 +11,7 @@ Expected<Tensor> Residual::forward(Runtime& rt, const Tensor& x) {
     if (!result) return result.error();
 
     // F(x) + x (broadcast add: same shape assumed)
-    auto out_type = TensorType::contiguous(x.type().shape(), x.type().dtype());
+    auto out_type = TensorMetadata::contiguous(x.type().shape(), x.type().dtype());
     auto out = Tensor(out_type, rt.allocator().allocate(out_type), x.requires_grad());
     auto* o_ptr = out.data<float>();
     auto* r_ptr = result.value().data<const float>();
