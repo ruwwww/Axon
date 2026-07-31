@@ -10,7 +10,6 @@ TEST_CASE("CPU feature detection queries host hardware without crashing", "[back
     if (best_isa == axon::cpu::ISA::AVX2) {
         REQUIRE(features.avx2);
         REQUIRE(features.fma3);
-        bool vnni = axon::cpu::has_avx_vnni();
-        (void)vnni;
+        REQUIRE(axon::cpu::has_avx_vnni() == features.avx_vnni);
     }
 }

@@ -90,18 +90,59 @@ static Expected<void> matmul_q4_K_avx2(KernelContext& ctx) {
                     float d2 = d * sc;
                     float m2 = min * m;
 
-                    for (int l = 0; l < 32; ++l) {
-                        int k_idx = k_base + b_sub + l;
-                        if (k_idx < K) {
-                            float val = d1 * static_cast<float>(q[l] & 0xF) - m1;
-                            sum += val * b_ptr[k_idx * N + j];
+                    for (int l = 0; l < 32; l += 8) {
+                        float a_vals[8];
+                        float b_vals[8];
+                        bool valid = true;
+                        for (int v = 0; v < 8; ++v) {
+                            int k_idx = k_base + b_sub + l + v;
+                            if (k_idx >= K) { valid = false; break; }
+                            a_vals[v] = d1 * static_cast<float>(q[l + v] & 0xF) - m1;
+                            b_vals[v] = b_ptr[k_idx * N + j];
+                        }
+                        if (valid) {
+                            Vec8f va = Vec8f::load(a_vals);
+                            Vec8f vb = Vec8f::load(b_vals);
+                            Vec8f vprod = Vec8f::fmadd(va, vb, Vec8f::set1(0.0f));
+                            alignas(32) float tmp[8];
+                            vprod.store(tmp);
+                            for (int v = 0; v < 8; ++v) sum += tmp[v];
+                        } else {
+                            for (int v = 0; v < 8; ++v) {
+                                int k_idx = k_base + b_sub + l + v;
+                                if (k_idx < K) {
+                                    float val = d1 * static_cast<float>(q[l + v] & 0xF) - m1;
+                                    sum += val * b_ptr[k_idx * N + j];
+                                }
+                            }
                         }
                     }
-                    for (int l = 0; l < 32; ++l) {
-                        int k_idx = k_base + b_sub + 32 + l;
-                        if (k_idx < K) {
-                            float val = d2 * static_cast<float>(q[l] >> 4) - m2;
-                            sum += val * b_ptr[k_idx * N + j];
+
+                    for (int l = 0; l < 32; l += 8) {
+                        float a_vals[8];
+                        float b_vals[8];
+                        bool valid = true;
+                        for (int v = 0; v < 8; ++v) {
+                            int k_idx = k_base + b_sub + 32 + l + v;
+                            if (k_idx >= K) { valid = false; break; }
+                            a_vals[v] = d2 * static_cast<float>(q[l + v] >> 4) - m2;
+                            b_vals[v] = b_ptr[k_idx * N + j];
+                        }
+                        if (valid) {
+                            Vec8f va = Vec8f::load(a_vals);
+                            Vec8f vb = Vec8f::load(b_vals);
+                            Vec8f vprod = Vec8f::fmadd(va, vb, Vec8f::set1(0.0f));
+                            alignas(32) float tmp[8];
+                            vprod.store(tmp);
+                            for (int v = 0; v < 8; ++v) sum += tmp[v];
+                        } else {
+                            for (int v = 0; v < 8; ++v) {
+                                int k_idx = k_base + b_sub + 32 + l + v;
+                                if (k_idx < K) {
+                                    float val = d2 * static_cast<float>(q[l + v] >> 4) - m2;
+                                    sum += val * b_ptr[k_idx * N + j];
+                                }
+                            }
                         }
                     }
                     q += 32;
@@ -152,22 +193,66 @@ static Expected<void> matmul_q5_K_avx2(KernelContext& ctx) {
                     float d2 = d * sc;
                     float m2 = min * m;
 
-                    for (int l = 0; l < 32; ++l) {
-                        int k_idx = k_base + b_sub + l;
-                        if (k_idx < K) {
-                            uint8_t q_val = (ql[l] & 0xF) + ((qh[l] & u1) ? 16 : 0);
-                            float val = d1 * static_cast<float>(q_val) - m1;
-                            sum += val * b_ptr[k_idx * N + j];
+                    for (int l = 0; l < 32; l += 8) {
+                        float a_vals[8];
+                        float b_vals[8];
+                        bool valid = true;
+                        for (int v = 0; v < 8; ++v) {
+                            int k_idx = k_base + b_sub + l + v;
+                            if (k_idx >= K) { valid = false; break; }
+                            uint8_t q_val = (ql[l + v] & 0xF) + ((qh[l + v] & u1) ? 16 : 0);
+                            a_vals[v] = d1 * static_cast<float>(q_val) - m1;
+                            b_vals[v] = b_ptr[k_idx * N + j];
+                        }
+                        if (valid) {
+                            Vec8f va = Vec8f::load(a_vals);
+                            Vec8f vb = Vec8f::load(b_vals);
+                            Vec8f vprod = Vec8f::fmadd(va, vb, Vec8f::set1(0.0f));
+                            alignas(32) float tmp[8];
+                            vprod.store(tmp);
+                            for (int v = 0; v < 8; ++v) sum += tmp[v];
+                        } else {
+                            for (int v = 0; v < 8; ++v) {
+                                int k_idx = k_base + b_sub + l + v;
+                                if (k_idx < K) {
+                                    uint8_t q_val = (ql[l + v] & 0xF) + ((qh[l + v] & u1) ? 16 : 0);
+                                    float val = d1 * static_cast<float>(q_val) - m1;
+                                    sum += val * b_ptr[k_idx * N + j];
+                                }
+                            }
                         }
                     }
-                    for (int l = 0; l < 32; ++l) {
-                        int k_idx = k_base + b_sub + 32 + l;
-                        if (k_idx < K) {
-                            uint8_t q_val = (ql[l] >> 4) + ((qh[l] & u2) ? 16 : 0);
-                            float val = d2 * static_cast<float>(q_val) - m2;
-                            sum += val * b_ptr[k_idx * N + j];
+
+                    for (int l = 0; l < 32; l += 8) {
+                        float a_vals[8];
+                        float b_vals[8];
+                        bool valid = true;
+                        for (int v = 0; v < 8; ++v) {
+                            int k_idx = k_base + b_sub + 32 + l + v;
+                            if (k_idx >= K) { valid = false; break; }
+                            uint8_t q_val = (ql[l + v] >> 4) + ((qh[l + v] & u2) ? 16 : 0);
+                            a_vals[v] = d2 * static_cast<float>(q_val) - m2;
+                            b_vals[v] = b_ptr[k_idx * N + j];
+                        }
+                        if (valid) {
+                            Vec8f va = Vec8f::load(a_vals);
+                            Vec8f vb = Vec8f::load(b_vals);
+                            Vec8f vprod = Vec8f::fmadd(va, vb, Vec8f::set1(0.0f));
+                            alignas(32) float tmp[8];
+                            vprod.store(tmp);
+                            for (int v = 0; v < 8; ++v) sum += tmp[v];
+                        } else {
+                            for (int v = 0; v < 8; ++v) {
+                                int k_idx = k_base + b_sub + 32 + l + v;
+                                if (k_idx < K) {
+                                    uint8_t q_val = (ql[l + v] >> 4) + ((qh[l + v] & u2) ? 16 : 0);
+                                    float val = d2 * static_cast<float>(q_val) - m2;
+                                    sum += val * b_ptr[k_idx * N + j];
+                                }
+                            }
                         }
                     }
+
                     ql += 32;
                     u1 <<= 2;
                     u2 <<= 2;
