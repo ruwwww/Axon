@@ -58,6 +58,14 @@ Distributed Training (long-term milestone)
 
 ---
 
+## 🏗️ Architectural Backlog
+
+- **#36** — TensorImpl Runtime Refactor & Stable Tensor Identity (blocker for views, memory planner, compiler, CUDA)
+- See `docs/adr/0008-tensorimpl-and-stable-tensor-identity.md` for architectural direction
+- See `docs/adr/0007-tensor-identity-in-autograd-nodes.md` for the current `input_ids_` workaround
+
+---
+
 ## 📋 Backlog Tickets
 
 - [x] **#21** — Polymorphic Node DAG Autograd Engine
@@ -68,7 +76,7 @@ Distributed Training (long-term milestone)
 - [x] **#29** — OpenBLAS / BLAS GEMM Provider Integration
 - [x] **#30** — Dynamic GEMM Strategy Selection Policy
 - [ ] **#31** — Permanent Automated Benchmark Suite
-- [ ] **#32** — Scalar-Tensor Arithmetic & Missing Runtime Wiring
+- [x] **#32** — Scalar-Tensor Arithmetic & Missing Runtime Wiring
 - [ ] **#33** — Softmax as First-Class Runtime Operation
 - [ ] **#34** — Shape Manipulation Ops (cat, split, view)
 - [ ] **#35** — Transformer Example (blocked by #32, #33, #34)

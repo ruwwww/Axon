@@ -22,3 +22,7 @@ Implement at the backend + autograd layer. The Runtime wiring is the current pub
 ## Status
 
 completed
+
+## Notes
+
+Implementation required the `input_ids_` workaround (see `docs/adr/0007-tensor-identity-in-autograd-nodes.md`) to preserve stable gradient-map lookups during backward propagation. This is a short-term fix; the long-term direction is documented in `docs/adr/0008-tensorimpl-and-stable-tensor-identity.md`.
