@@ -68,3 +68,7 @@ Distributed Training (long-term milestone)
 - [x] **#29** — OpenBLAS / BLAS GEMM Provider Integration
 - [x] **#30** — Dynamic GEMM Strategy Selection Policy
 - [ ] **#31** — Permanent Automated Benchmark Suite
+- [ ] **#32** — Scalar-Tensor Arithmetic & Missing Runtime Wiring
+- [ ] **#33** — Softmax as First-Class Runtime Operation
+- [ ] **#34** — Shape Manipulation Ops (cat, split, view)
+- [ ] **#35** — Transformer Example (blocked by #32, #33, #34)
