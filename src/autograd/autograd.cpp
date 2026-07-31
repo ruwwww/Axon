@@ -85,11 +85,11 @@ Expected<void> MatMulNode::apply(Runtime& rt, GradientMap& grads) {
             }
         }
 
-        auto it = grads.find(input_ids_[0]);
+        auto it = grads.find(inputs_[0].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, da);
         } else {
-            grads[input_ids_[0]] = da;
+            grads[inputs_[0].id()] = da;
         }
     }
 
@@ -112,11 +112,11 @@ Expected<void> MatMulNode::apply(Runtime& rt, GradientMap& grads) {
             }
         }
 
-        auto it = grads.find(input_ids_[1]);
+        auto it = grads.find(inputs_[1].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, db);
         } else {
-            grads[input_ids_[1]] = db;
+            grads[inputs_[1].id()] = db;
         }
     }
 
@@ -157,11 +157,11 @@ Expected<void> ReLUNode::apply(Runtime& rt, GradientMap& grads) {
         dx_it[i] = x_it[i] > 0.0f ? go_it[i] : 0.0f;
     }
 
-    auto it = grads.find(input_ids_[0]);
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, dx);
     } else {
-        grads[input_ids_[0]] = dx;
+        grads[inputs_[0].id()] = dx;
     }
 
     return {};
@@ -214,11 +214,11 @@ Expected<void> AddNode::apply(Runtime& rt, GradientMap& grads) {
     }
     Tensor grad_out = grad_it->second;
 
-    auto it = grads.find(input_ids_[0]);
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, grad_out);
     } else {
-        grads[input_ids_[0]] = grad_out;
+        grads[inputs_[0].id()] = grad_out;
     }
 
     {
@@ -238,18 +238,18 @@ Expected<void> AddNode::apply(Runtime& rt, GradientMap& grads) {
                 db_ptr[j] = sum;
             }
 
-            auto it = grads.find(input_ids_[1]);
+            auto it = grads.find(inputs_[1].id());
             if (it != grads.end()) {
                 cpu::add(it->second, it->second, db);
             } else {
-                grads[input_ids_[1]] = db;
+                grads[inputs_[1].id()] = db;
             }
         } else {
-            auto it = grads.find(input_ids_[1]);
+            auto it = grads.find(inputs_[1].id());
             if (it != grads.end()) {
                 cpu::add(it->second, it->second, grad_out);
             } else {
-                grads[input_ids_[1]] = grad_out;
+                grads[inputs_[1].id()] = grad_out;
             }
         }
     }
@@ -293,16 +293,16 @@ Expected<void> SubNode::apply(Runtime& rt, GradientMap& grads) {
         for (int64_t i = 0; i < n; ++i) {
             dx_it[i] = go_it[i];
         }
-        auto it = grads.find(input_ids_[0]);
+        auto it = grads.find(inputs_[0].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, dx);
         } else {
-            grads[input_ids_[0]] = dx;
+            grads[inputs_[0].id()] = dx;
         }
     }
 
     {
-        auto it = grads.find(input_ids_[1]);
+        auto it = grads.find(inputs_[1].id());
         if (it != grads.end()) {
             auto neg_grad_type = TensorType::contiguous(inputs_[1].type().shape(), inputs_[1].type().dtype());
             Tensor neg_grad(neg_grad_type, rt.allocator().allocate(neg_grad_type), false);
@@ -322,7 +322,7 @@ Expected<void> SubNode::apply(Runtime& rt, GradientMap& grads) {
             for (int64_t i = 0; i < n; ++i) {
                 ng_it[i] = -go_it[i];
             }
-            grads[input_ids_[1]] = neg_grad;
+            grads[inputs_[1].id()] = neg_grad;
         }
     }
 
@@ -364,11 +364,11 @@ Expected<void> MulScalarNode::apply(Runtime& rt, GradientMap& grads) {
         dx_it[i] = go_it[i] * s;
     }
 
-    auto it = grads.find(input_ids_[0]);
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, dx);
     } else {
-        grads[input_ids_[0]] = dx;
+        grads[inputs_[0].id()] = dx;
     }
 
     return {};
@@ -409,11 +409,11 @@ Expected<void> DivScalarNode::apply(Runtime& rt, GradientMap& grads) {
         dx_it[i] = go_it[i] * inv_s;
     }
 
-    auto it = grads.find(input_ids_[0]);
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, dx);
     } else {
-        grads[input_ids_[0]] = dx;
+        grads[inputs_[0].id()] = dx;
     }
 
     return {};
@@ -476,11 +476,11 @@ Expected<void> CrossEntropyLossNode::apply(Runtime& rt, GradientMap& grads) {
         }
     }
 
-    auto it = grads.find(input_ids_[0]);
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, dlogits);
     } else {
-        grads[input_ids_[0]] = dlogits;
+        grads[inputs_[0].id()] = dlogits;
     }
 
     return {};
@@ -535,11 +535,11 @@ Expected<void> MSELossNode::apply(Runtime& rt, GradientMap& grads) {
         d_it[i] = scale * (p_it[i] - t_it[i]);
     }
 
-    auto it = grads.find(input_ids_[0]);
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, dpred);
     } else {
-        grads[input_ids_[0]] = dpred;
+        grads[inputs_[0].id()] = dpred;
     }
 
     return {};
@@ -600,11 +600,11 @@ Expected<void> L1LossNode::apply(Runtime& rt, GradientMap& grads) {
         }
     }
 
-    auto it = grads.find(input_ids_[0]);
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, dpred);
     } else {
-        grads[input_ids_[0]] = dpred;
+        grads[inputs_[0].id()] = dpred;
     }
 
     return {};
@@ -702,11 +702,11 @@ Expected<void> Conv2DNode::apply(Runtime& rt, GradientMap& grads) {
             }
         }
 
-        auto it = grads.find(input_ids_[0]);
+        auto it = grads.find(inputs_[0].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, di);
         } else {
-            grads[input_ids_[0]] = di;
+            grads[inputs_[0].id()] = di;
         }
     }
 
@@ -741,11 +741,11 @@ Expected<void> Conv2DNode::apply(Runtime& rt, GradientMap& grads) {
             }
         }
 
-        auto it = grads.find(input_ids_[1]);
+        auto it = grads.find(inputs_[1].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, dw);
         } else {
-            grads[input_ids_[1]] = dw;
+            grads[inputs_[1].id()] = dw;
         }
     }
 
@@ -768,11 +768,11 @@ Expected<void> Conv2DNode::apply(Runtime& rt, GradientMap& grads) {
             db_it[oc] = sum;
         }
 
-        auto it = grads.find(input_ids_[2]);
+        auto it = grads.find(inputs_[2].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, db);
         } else {
-            grads[input_ids_[2]] = db;
+            grads[inputs_[2].id()] = db;
         }
     }
 
@@ -846,11 +846,11 @@ Expected<void> MaxPool2dNode::apply(Runtime& rt, GradientMap& grads) {
         }
     }
 
-    auto it = grads.find(input_ids_[0]);
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, dx);
     } else {
-        grads[input_ids_[0]] = dx;
+        grads[inputs_[0].id()] = dx;
     }
 
     return {};
@@ -914,11 +914,11 @@ Expected<void> AvgPool2dNode::apply(Runtime& rt, GradientMap& grads) {
         }
     }
 
-    auto it = grads.find(input_ids_[0]);
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, dx);
     } else {
-        grads[input_ids_[0]] = dx;
+        grads[inputs_[0].id()] = dx;
     }
 
     return {};
@@ -1000,11 +1000,11 @@ Expected<void> BatchNormNode::apply(Runtime& rt, GradientMap& grads) {
             dg_it[c] = sum;
         }
 
-        auto it = grads.find(input_ids_[1]);
+        auto it = grads.find(inputs_[1].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, dg);
         } else {
-            grads[input_ids_[1]] = dg;
+            grads[inputs_[1].id()] = dg;
         }
     }
 
@@ -1021,11 +1021,11 @@ Expected<void> BatchNormNode::apply(Runtime& rt, GradientMap& grads) {
             db_it[c] = sum;
         }
 
-        auto it = grads.find(input_ids_[2]);
+        auto it = grads.find(inputs_[2].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, db);
         } else {
-            grads[input_ids_[2]] = db;
+            grads[inputs_[2].id()] = db;
         }
     }
 
@@ -1059,11 +1059,11 @@ Expected<void> BatchNormNode::apply(Runtime& rt, GradientMap& grads) {
             }
         }
 
-        auto it = grads.find(input_ids_[0]);
+        auto it = grads.find(inputs_[0].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, di);
         } else {
-            grads[input_ids_[0]] = di;
+            grads[inputs_[0].id()] = di;
         }
     }
 
@@ -1130,11 +1130,11 @@ Expected<void> LayerNormNode::apply(Runtime& rt, GradientMap& grads) {
             dg_it[d] = sum;
         }
 
-        auto it = grads.find(input_ids_[1]);
+        auto it = grads.find(inputs_[1].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, dg);
         } else {
-            grads[input_ids_[1]] = dg;
+            grads[inputs_[1].id()] = dg;
         }
     }
 
@@ -1149,11 +1149,11 @@ Expected<void> LayerNormNode::apply(Runtime& rt, GradientMap& grads) {
             db_it[d] = sum;
         }
 
-        auto it = grads.find(input_ids_[2]);
+        auto it = grads.find(inputs_[2].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, db);
         } else {
-            grads[input_ids_[2]] = db;
+            grads[inputs_[2].id()] = db;
         }
     }
 
@@ -1181,11 +1181,11 @@ Expected<void> LayerNormNode::apply(Runtime& rt, GradientMap& grads) {
             }
         }
 
-        auto it = grads.find(input_ids_[0]);
+        auto it = grads.find(inputs_[0].id());
         if (it != grads.end()) {
             cpu::add(it->second, it->second, di);
         } else {
-            grads[input_ids_[0]] = di;
+            grads[inputs_[0].id()] = di;
         }
     }
 
@@ -1235,11 +1235,11 @@ Expected<void> GELUNode::apply(Runtime& rt, GradientMap& grads) {
         dx_it[i] = go_it[i] * df;
     }
 
-    auto it = grads.find(input_ids_[0]);
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, dx);
     } else {
-        grads[input_ids_[0]] = dx;
+        grads[inputs_[0].id()] = dx;
     }
 
     return {};
@@ -1282,11 +1282,11 @@ Expected<void> ReshapeNode::apply(Runtime& rt, GradientMap& grads) {
         grad_dst[i] = go_src[i];
     }
 
-    auto it = grads.find(input_ids_[0]);
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, grad);
     } else {
-        grads[input_ids_[0]] = grad;
+        grads[inputs_[0].id()] = grad;
     }
 
     return {};
@@ -1365,11 +1365,11 @@ Expected<void> MeanNode::apply(Runtime& rt, GradientMap& grads) {
         dx_it[flat] = go_it[out_flat] * inv;
     }
 
-    auto it = grads.find(input_ids_[0]);
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, dx);
     } else {
-        grads[input_ids_[0]] = dx;
+        grads[inputs_[0].id()] = dx;
     }
 
     return {};
@@ -1428,11 +1428,11 @@ Expected<void> TransposeNode::apply(Runtime& rt, GradientMap& grads) {
         dx_it[i] = tv_it[i];
     }
 
-    auto it = grads.find(input_ids_[0]);
+    auto it = grads.find(inputs_[0].id());
     if (it != grads.end()) {
         cpu::add(it->second, it->second, dx);
     } else {
-        grads[input_ids_[0]] = dx;
+        grads[inputs_[0].id()] = dx;
     }
 
     return {};
@@ -1458,10 +1458,9 @@ Expected<void> Autograd::backward(Runtime& runtime, const Tensor& loss) {
 
     for (size_t i = 0; i < graph_.size(); ++i) {
         const auto& node = graph_[i];
-        const auto ids = node->input_ids();
         const auto& ins = node->inputs();
         for (size_t j = 0; j < ins.size(); ++j) {
-            auto it = grads_.find(ids[j]);
+            auto it = grads_.find(ins[j].id());
             if (it != grads_.end()) {
                 const_cast<Tensor&>(ins[j]).set_grad(it->second);
             }

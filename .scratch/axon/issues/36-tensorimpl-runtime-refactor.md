@@ -81,4 +81,8 @@ Not required for current eager execution milestones, but should be completed **b
 
 ## Status
 
-backlog
+completed
+
+## Implementation notes
+
+Implemented in commit(s) following ADR-0008. Tensor is now a lightweight handle wrapping a shared TensorImpl. TensorId lives in TensorImpl, ensuring stable identity across copies. The input_ids_ workaround was removed from all autograd nodes and backward propagation now uses inputs_[i].id() directly.

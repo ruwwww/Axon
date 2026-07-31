@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — Architectural Backlog
+Accepted — Implemented
 
 ## Context
 
