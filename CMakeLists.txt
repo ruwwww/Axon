@@ -20,6 +20,16 @@ include_directories(include)
 # Source files
 file(GLOB_RECURSE AXON_SOURCES src/*.cpp)
 
+# Apply SIMD flags specifically to AVX2 translation units
+file(GLOB_RECURSE AVX2_SOURCES src/backend/cpu/avx2/*.cpp)
+if(AVX2_SOURCES)
+    if(MSVC)
+        set_source_files_properties(${AVX2_SOURCES} PROPERTIES COMPILE_FLAGS "/arch:AVX2")
+    else()
+        set_source_files_properties(${AVX2_SOURCES} PROPERTIES COMPILE_FLAGS "-mavx2 -mfma")
+    endif()
+endif()
+
 # Main library
 add_library(axon ${AXON_SOURCES})
 
