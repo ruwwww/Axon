@@ -16,15 +16,14 @@ static axon::Expected<void> mock_add_avx2(axon::cpu::KernelContext& ctx) {
 
 TEST_CASE("KernelRegistry registers and dispatches kernels based on CPU ISA", "[backend][registry]") {
     auto& reg = axon::cpu::KernelRegistry::instance();
-    reg.clear();
 
-    reg.register_kernel("add", axon::cpu::ISA::Scalar, mock_add_scalar);
-    reg.register_kernel("add", axon::cpu::ISA::AVX2, mock_add_avx2);
+    reg.register_kernel("mock_add", axon::cpu::ISA::Scalar, mock_add_scalar);
+    reg.register_kernel("mock_add", axon::cpu::ISA::AVX2, mock_add_avx2);
 
     g_scalar_called = false;
     g_avx2_called = false;
 
-    auto fn = reg.dispatch("add");
+    auto fn = reg.dispatch("mock_add");
     REQUIRE(fn != nullptr);
 
     axon::Tensor dummy_out, dummy_a, dummy_b;

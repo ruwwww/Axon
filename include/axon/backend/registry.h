@@ -32,4 +32,6 @@ private:
     std::unordered_map<std::string, KernelFn> registry_;
 };
 
+void register_cpu_kernels();
+
 } // namespace axon::cpu

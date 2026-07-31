@@ -1,4 +1,5 @@
 #include "axon/backend/cpu_backend.h"
+#include "axon/backend/registry.h"
 #include "axon/tensor/tensor_iterator.h"
 #include <algorithm>
 #include <cmath>
@@ -35,6 +36,16 @@ static Expected<void> elementwise_op(Tensor& out, const Tensor& a, const Tensor&
 }
 
 Expected<void> add(Tensor& out, const Tensor& a, const Tensor& b) {
+    auto check = validate_same_shape(a, b, out);
+    if (!check) return check.error();
+
+    auto fn = KernelRegistry::instance().dispatch("add");
+    if (fn) {
+        Tensor outputs[] = {out};
+        Tensor inputs[] = {a, b};
+        KernelContext ctx{.outputs = outputs, .inputs = inputs};
+        return fn(ctx);
+    }
     return elementwise_op(out, a, b, [](float x, float y) { return x + y; });
 }
 
@@ -43,6 +54,16 @@ Expected<void> sub(Tensor& out, const Tensor& a, const Tensor& b) {
 }
 
 Expected<void> mul(Tensor& out, const Tensor& a, const Tensor& b) {
+    auto check = validate_same_shape(a, b, out);
+    if (!check) return check.error();
+
+    auto fn = KernelRegistry::instance().dispatch("mul");
+    if (fn) {
+        Tensor outputs[] = {out};
+        Tensor inputs[] = {a, b};
+        KernelContext ctx{.outputs = outputs, .inputs = inputs};
+        return fn(ctx);
+    }
     return elementwise_op(out, a, b, [](float x, float y) { return x * y; });
 }
 
@@ -96,6 +117,14 @@ Expected<void> relu(Tensor& out, const Tensor& x) {
     }
     if (x.type().dtype() != DType::Float32 || out.type().dtype() != DType::Float32) {
         return Error{"cpu::relu: only Float32 supported"};
+    }
+
+    auto fn = KernelRegistry::instance().dispatch("relu");
+    if (fn) {
+        Tensor outputs[] = {out};
+        Tensor inputs[] = {x};
+        KernelContext ctx{.outputs = outputs, .inputs = inputs};
+        return fn(ctx);
     }
 
     TensorIterator<const float> x_it(x);

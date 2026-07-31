@@ -35,6 +35,7 @@ public:
     QuantFormat quant() const { return quant_; }
 
     size_t ndim() const { return shape_.size(); }
+    bool is_contiguous() const { return strides_ == compute_strides(shape_); }
     int64_t numel() const {
         int64_t n = 1;
         for (auto s : shape_) n *= s;

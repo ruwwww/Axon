@@ -23,7 +23,23 @@ KernelFn KernelRegistry::lookup(const std::string& op_name, ISA isa) const {
     return nullptr;
 }
 
+void register_scalar_elementwise_kernels();
+#if defined(__AVX2__) || (defined(_MSC_VER) && (defined(_M_AMD64) || defined(_M_IX86)))
+void register_avx2_elementwise_kernels();
+#endif
+
+void register_cpu_kernels() {
+    auto& reg = KernelRegistry::instance();
+    if (!reg.lookup("add", ISA::Scalar)) {
+        register_scalar_elementwise_kernels();
+#if defined(__AVX2__) || (defined(_MSC_VER) && (defined(_M_AMD64) || defined(_M_IX86)))
+        register_avx2_elementwise_kernels();
+#endif
+    }
+}
+
 KernelFn KernelRegistry::dispatch(const std::string& op_name) const {
+    register_cpu_kernels();
     ISA best = get_best_isa();
 
     // Try best ISA first
