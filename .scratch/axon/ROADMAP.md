@@ -63,6 +63,7 @@ Distributed Training (long-term milestone)
 - **#36** — TensorImpl Runtime Refactor & Stable Tensor Identity (blocker for views, memory planner, compiler, CUDA)
 - See `docs/adr/0008-tensorimpl-and-stable-tensor-identity.md` for architectural direction
 - See `docs/adr/0007-tensor-identity-in-autograd-nodes.md` for the current `input_ids_` workaround
+- **#37** — Rename `TensorType` to `TensorMetadata` (architectural clarification for runtime vs compiler naming)
 
 ---
 
@@ -80,3 +81,4 @@ Distributed Training (long-term milestone)
 - [ ] **#33** — Softmax as First-Class Runtime Operation
 - [ ] **#34** — Shape Manipulation Ops (cat, split, view)
 - [ ] **#35** — Transformer Example (blocked by #32, #33, #34)
+- [ ] **#37** — Rename `TensorType` to `TensorMetadata` (architectural clarification)
