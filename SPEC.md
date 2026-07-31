@@ -42,7 +42,7 @@ A minimal, layered C++20 framework with six subsystems: Storage, Tensor, Backend
 - **Operations** are stateless functors implementing `forward()` and `backward()`.
 - **Operations own graph recording**: `forward()` allocates outputs, calls the CPU backend kernel, then (if `requires_grad`) appends a concrete `Node` (`std::shared_ptr<Node>`) to the Graph.
 - **Node** polymorphic base class: defines virtual `apply(Runtime&, GradientMap&)` method. Each operation defines a concrete `Node` subclass holding saved forward inputs/tensors.
-- **Backend** is a namespace `cpu::` of free functions. It receives `Tensor*` pointers. Never accesses the Graph.
+- **Backend** is `namespace cpu::` with a `KernelRegistry` dispatching typed `KernelKey(OpId, Device, DType, Provider)` to kernel functions. ISA selection (AVX2 vs Scalar) happens at registration time. External BLAS dispatch is routed via `choose_gemm_strategy()`. The backend never accesses the Graph.
 
 ### Autograd
 
@@ -111,7 +111,7 @@ A minimal, layered C++20 framework with six subsystems: Storage, Tensor, Backend
 
 ## Out of Scope
 
-- CUDA or any GPU backend.
+- CUDA or any GPU backend execution (the `KernelKey` abstraction includes `Device::CUDA` / `Provider::CUDA` but no kernels are implemented).
 - Distributed training.
 - JIT compilation or graph optimization.
 - Compiler IR or dynamic shape optimization.
@@ -123,7 +123,7 @@ A minimal, layered C++20 framework with six subsystems: Storage, Tensor, Backend
 
 ## Further Notes
 
-- No global state, no singletons, no macros.
+- Minimal global state. `KernelRegistry::instance()` is the sole singleton (lazy-initialized, registration-guarded). No macros.
 - RAII everywhere. Raw pointers are non-owning only.
 - Memory ownership: Tensor (`shared_ptr<Storage>`), Graph (owns nodes), Module (owns parameters), Optimizer (owns state tensors).
 - Milestones: M1 (Tensor, Storage, MatMul, ReLU, Autograd) → M2 (Linear, SGD, MNIST) → M3 (Conv2D, AdamW, CIFAR10) → M4 (ResNet18, CIFAR10) → M5 (GGML quantized inference/training research).
