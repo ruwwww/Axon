@@ -2,7 +2,7 @@
 
 #include "axon/backend/simd/vec.h"
 
-#if defined(__AVX2__) || (defined(_MSC_VER) && (defined(_M_AMD64) || defined(_M_IX86)))
+#if defined(__AVX2__)
 #include <immintrin.h>
 
 namespace axon::simd {
