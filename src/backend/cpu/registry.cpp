@@ -15,27 +15,26 @@ void KernelRegistry::register_kernel(const std::string& op_name, ISA isa, Kernel
     registry_[make_key(op_name, isa)] = fn;
 }
 
+void register_scalar_elementwise_kernels();
+void register_avx2_elementwise_kernels();
+
+static bool g_kernels_registered = false;
+
+void register_cpu_kernels() {
+    if (!g_kernels_registered) {
+        g_kernels_registered = true;
+        register_scalar_elementwise_kernels();
+        register_avx2_elementwise_kernels();
+    }
+}
+
 KernelFn KernelRegistry::lookup(const std::string& op_name, ISA isa) const {
+    register_cpu_kernels();
     auto it = registry_.find(make_key(op_name, isa));
     if (it != registry_.end()) {
         return it->second;
     }
     return nullptr;
-}
-
-void register_scalar_elementwise_kernels();
-#if defined(__AVX2__) || (defined(_MSC_VER) && (defined(_M_AMD64) || defined(_M_IX86)))
-void register_avx2_elementwise_kernels();
-#endif
-
-void register_cpu_kernels() {
-    auto& reg = KernelRegistry::instance();
-    if (!reg.lookup("add", ISA::Scalar)) {
-        register_scalar_elementwise_kernels();
-#if defined(__AVX2__) || (defined(_MSC_VER) && (defined(_M_AMD64) || defined(_M_IX86)))
-        register_avx2_elementwise_kernels();
-#endif
-    }
 }
 
 KernelFn KernelRegistry::dispatch(const std::string& op_name) const {
@@ -54,6 +53,7 @@ KernelFn KernelRegistry::dispatch(const std::string& op_name) const {
 
 void KernelRegistry::clear() {
     registry_.clear();
+    g_kernels_registered = false;
 }
 
 } // namespace axon::cpu
