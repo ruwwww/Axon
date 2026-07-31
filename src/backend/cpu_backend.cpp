@@ -94,6 +94,14 @@ Expected<void> matmul(Tensor& out, const Tensor& a, const Tensor& b) {
         return Error{"cpu::matmul: only Float32 supported"};
     }
 
+    auto fn = KernelRegistry::instance().dispatch("matmul");
+    if (fn) {
+        Tensor outputs[] = {out};
+        Tensor inputs[] = {a, b};
+        KernelContext ctx{.outputs = outputs, .inputs = inputs};
+        return fn(ctx);
+    }
+
     TensorIterator<const float> a_it(a);
     TensorIterator<const float> b_it(b);
     TensorIterator<float> out_it(out);

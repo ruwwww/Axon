@@ -17,6 +17,8 @@ void KernelRegistry::register_kernel(const std::string& op_name, ISA isa, Kernel
 
 void register_scalar_elementwise_kernels();
 void register_avx2_elementwise_kernels();
+void register_scalar_gemm_kernels();
+void register_avx2_gemm_kernels();
 
 static bool g_kernels_registered = false;
 
@@ -25,6 +27,8 @@ void register_cpu_kernels() {
         g_kernels_registered = true;
         register_scalar_elementwise_kernels();
         register_avx2_elementwise_kernels();
+        register_scalar_gemm_kernels();
+        register_avx2_gemm_kernels();
     }
 }
 
