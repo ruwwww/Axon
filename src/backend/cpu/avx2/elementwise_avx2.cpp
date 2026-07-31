@@ -108,9 +108,9 @@ static Expected<void> relu_avx2(KernelContext& ctx) {
 
 void register_avx2_elementwise_kernels() {
     auto& reg = KernelRegistry::instance();
-    reg.register_kernel("add", ISA::AVX2, add_avx2);
-    reg.register_kernel("mul", ISA::AVX2, mul_avx2);
-    reg.register_kernel("relu", ISA::AVX2, relu_avx2);
+    reg.register_kernel({OpId::Add, Device::CPU, DType::Float32, Provider::AxonNative}, add_avx2);
+    reg.register_kernel({OpId::Mul, Device::CPU, DType::Float32, Provider::AxonNative}, mul_avx2);
+    reg.register_kernel({OpId::ReLU, Device::CPU, DType::Float32, Provider::AxonNative}, relu_avx2);
 }
 
 #endif

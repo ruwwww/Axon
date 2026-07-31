@@ -29,7 +29,7 @@ static Expected<void> matmul_blas(KernelContext& ctx) {
 
 void register_blas_kernels() {
     auto& reg = KernelRegistry::instance();
-    reg.register_kernel("matmul_blas", ISA::Scalar, matmul_blas);
+    reg.register_kernel({OpId::MatMulBLAS, Device::CPU, DType::Float32, Provider::BLAS}, matmul_blas);
 }
 
 #else

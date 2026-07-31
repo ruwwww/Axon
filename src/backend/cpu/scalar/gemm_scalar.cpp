@@ -50,7 +50,7 @@ static Expected<void> matmul_scalar(KernelContext& ctx) {
 
 void register_scalar_gemm_kernels() {
     auto& reg = KernelRegistry::instance();
-    reg.register_kernel("matmul", ISA::Scalar, matmul_scalar);
+    reg.register_kernel({OpId::MatMul, Device::CPU, DType::Float32, Provider::AxonNative}, matmul_scalar);
 }
 
 } // namespace axon::cpu

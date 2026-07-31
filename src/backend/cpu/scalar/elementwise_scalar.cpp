@@ -61,10 +61,10 @@ static Expected<void> gelu_scalar(KernelContext& ctx) {
 
 void register_scalar_elementwise_kernels() {
     auto& reg = KernelRegistry::instance();
-    reg.register_kernel("add", ISA::Scalar, add_scalar);
-    reg.register_kernel("mul", ISA::Scalar, mul_scalar);
-    reg.register_kernel("relu", ISA::Scalar, relu_scalar);
-    reg.register_kernel("gelu", ISA::Scalar, gelu_scalar);
+    reg.register_kernel({OpId::Add, Device::CPU, DType::Float32, Provider::AxonNative}, add_scalar);
+    reg.register_kernel({OpId::Mul, Device::CPU, DType::Float32, Provider::AxonNative}, mul_scalar);
+    reg.register_kernel({OpId::ReLU, Device::CPU, DType::Float32, Provider::AxonNative}, relu_scalar);
+    reg.register_kernel({OpId::GELU, Device::CPU, DType::Float32, Provider::AxonNative}, gelu_scalar);
 }
 
 } // namespace axon::cpu

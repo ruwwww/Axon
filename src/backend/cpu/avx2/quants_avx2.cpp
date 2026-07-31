@@ -267,9 +267,9 @@ static Expected<void> matmul_q5_K_avx2(KernelContext& ctx) {
 
 void register_avx2_quants_kernels() {
     auto& reg = KernelRegistry::instance();
-    reg.register_kernel("matmul_q4_0", ISA::AVX2, matmul_q4_0_avx2);
-    reg.register_kernel("matmul_q4_K", ISA::AVX2, matmul_q4_K_avx2);
-    reg.register_kernel("matmul_q5_K", ISA::AVX2, matmul_q5_K_avx2);
+    reg.register_kernel({OpId::MatMulQ4_0, Device::CPU, DType::Float32, Provider::AxonNative}, matmul_q4_0_avx2);
+    reg.register_kernel({OpId::MatMulQ4_K, Device::CPU, DType::Float32, Provider::AxonNative}, matmul_q4_K_avx2);
+    reg.register_kernel({OpId::MatMulQ5_K, Device::CPU, DType::Float32, Provider::AxonNative}, matmul_q5_K_avx2);
 }
 
 #endif
