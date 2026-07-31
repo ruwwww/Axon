@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include "axon/core/expected.h"
+#include "axon/core/types.h"
 #include "axon/storage/storage.h"
 #include "axon/tensor/tensor_impl.h"
 #include "axon/tensor/tensor_type.h"
@@ -10,8 +11,6 @@
 namespace axon {
 
 class Runtime;
-
-using TensorId = uint64_t;
 
 class Tensor {
 public:
@@ -26,7 +25,7 @@ public:
     static Tensor randn(Runtime& rt, const std::vector<int64_t>& shape, DType dtype = DType::Float32);
 
     TensorId id() const { return impl_ ? impl_->id_ : 0; }
-    const TensorType& type() const { return impl_->type_; }
+    const TensorType& type() const { return impl_ ? impl_->type_ : default_type_; }
     StoragePtr storage() const { return impl_ ? impl_->storage_ : nullptr; }
     bool requires_grad() const { return impl_ ? impl_->requires_grad_ : false; }
 
@@ -42,18 +41,13 @@ public:
 
     template <typename T>
     T* data() const {
-        return static_cast<T*>(impl_->storage_->data) + impl_->storage_offset_;
-    }
-
-    static Tensor share_impl(TensorImplPtr impl) {
-        Tensor t;
-        t.impl_ = std::move(impl);
-        return t;
+        return impl_ ? static_cast<T*>(impl_->storage_->data) + impl_->storage_offset_ : nullptr;
     }
 
 private:
     TensorImplPtr impl_;
     std::shared_ptr<Tensor> grad_;
+    static TensorType default_type_;
 
     static TensorId next_id() {
         static TensorId counter = 0;

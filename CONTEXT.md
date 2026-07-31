@@ -5,8 +5,11 @@ A minimal deep learning framework focused on understanding how modern AI runtime
 ## Language
 
 **Tensor**:
-A lightweight, copyable frontend object. Holds a `std::shared_ptr<Storage>`, an `int64_t storage_offset_` (in elements), and an immutable `TensorType` descriptor. Phase 1 uses shared ownership via shared_ptr for simplicity; the original spec's "non-owning pointer" model can be restored later if the refcount overhead matters.
+A lightweight, copyable frontend handle. Wraps a `std::shared_ptr<TensorImpl>`, which owns the tensor's metadata and references the underlying `Storage`. Copying a `Tensor` copies only the handle; all copies share the same `TensorImpl` and thus the same logical identity (`TensorId`). The `TensorImpl` holds `TensorType` (shape, strides, dtype, device, quantization), `StoragePtr`, `storage_offset_`, and `requires_grad_`.
 _Avoid_: Raw owning pointers to storage
+
+**TensorImpl**:
+The logical tensor object. Owns `TensorId`, `TensorType`, `StoragePtr`, `storage_offset_`, and `requires_grad_`. Multiple `Tensor` handles can reference the same `TensorImpl`. `TensorId` lives here, ensuring stable identity across copies. `TensorType` describes properties only (no identity).
 
 **TensorIterator**:
 A strided accessor over a Tensor's data. Reads shape+strides+dtype+offset from a TensorType and Storage, and provides `operator[]` that computes the correct memory offset for any flat index via stride arithmetic. Has an internal `is_contiguous()` fast-path branch. Does not know about Runtime, backend kernels, or autograd. Lives in `include/axon/tensor/tensor_iterator.h`.

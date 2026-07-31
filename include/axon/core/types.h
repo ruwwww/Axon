@@ -4,6 +4,8 @@
 
 namespace axon {
 
+using TensorId = uint64_t;
+
 enum class DType : uint8_t {
     Float32,
     Float64,

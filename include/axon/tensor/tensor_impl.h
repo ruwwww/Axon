@@ -2,12 +2,11 @@
 
 #include <cstdint>
 #include <memory>
+#include "axon/core/types.h"
 #include "axon/storage/storage.h"
 #include "axon/tensor/tensor_type.h"
 
 namespace axon {
-
-using TensorId = uint64_t;
 
 class TensorImpl {
 public:
