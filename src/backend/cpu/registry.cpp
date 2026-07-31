@@ -20,6 +20,7 @@ void register_avx2_elementwise_kernels();
 void register_scalar_gemm_kernels();
 void register_avx2_gemm_kernels();
 void register_avx2_quants_kernels();
+void register_blas_kernels();
 
 static bool g_kernels_registered = false;
 
@@ -31,6 +32,7 @@ void register_cpu_kernels() {
         register_scalar_gemm_kernels();
         register_avx2_gemm_kernels();
         register_avx2_quants_kernels();
+        register_blas_kernels();
     }
 }
 

@@ -1,12 +1,14 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
 #include <string>
-#include <vector>
 #include "axon/backend/cpuid.h"
 #include "axon/core/types.h"
 
 namespace axon::cpu {
+
+constexpr int64_t kBlasMinDimensionThreshold = 64;
 
 enum class GemmProvider : uint8_t {
     AxonScalar = 0,
@@ -22,8 +24,8 @@ struct GemmStrategy {
 };
 
 GemmStrategy choose_gemm_strategy(
-    const std::vector<int64_t>& shape_a,
-    const std::vector<int64_t>& shape_b,
+    std::span<const int64_t> shape_a,
+    std::span<const int64_t> shape_b,
     DType dtype_a = DType::Float32,
     QuantFormat quant_a = QuantFormat::None,
     bool is_contiguous_a = true,

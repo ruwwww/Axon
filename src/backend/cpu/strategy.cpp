@@ -3,8 +3,8 @@
 namespace axon::cpu {
 
 GemmStrategy choose_gemm_strategy(
-    const std::vector<int64_t>& shape_a,
-    const std::vector<int64_t>& shape_b,
+    std::span<const int64_t> shape_a,
+    std::span<const int64_t> shape_b,
     DType dtype_a,
     QuantFormat quant_a,
     bool is_contiguous_a,
@@ -40,8 +40,8 @@ GemmStrategy choose_gemm_strategy(
         int64_t K = shape_a[1];
         int64_t N = shape_b[1];
 
-        // Large FP32 matrices (> 64) delegate to External BLAS when available
-        if (blas_available && M > 64 && N > 64 && K > 64) {
+        // Large FP32 matrices (> kBlasMinDimensionThreshold) delegate to External BLAS when available
+        if (blas_available && M > kBlasMinDimensionThreshold && N > kBlasMinDimensionThreshold && K > kBlasMinDimensionThreshold) {
             strat.provider = GemmProvider::ExternalBLAS;
             strat.isa = ISA::Scalar;
             strat.kernel_name = "matmul_blas";
